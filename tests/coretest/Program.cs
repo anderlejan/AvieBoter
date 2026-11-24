@@ -24,6 +24,12 @@ try
     File.WriteAllText(bp, "{ broken");
     var l3 = JsonStore.Load<BotList>(bp);
     Check("broken file kept as .corrupt and loading goes on", l3.Bots.Count == 0 && Directory.GetFiles(dir, "bots.json.corrupt-*").Length == 1);
+    // Saved passwords: readable whether they were saved under the former name, by 1.0.1, or now
+    string Old(string e) => Convert.ToBase64String(System.Security.Cryptography.ProtectedData.Protect(System.Text.Encoding.UTF8.GetBytes("pw-1"),
+        System.Text.Encoding.UTF8.GetBytes(e), System.Security.Cryptography.DataProtectionScope.CurrentUser));
+    Check("password saved under the former name reads", Secrets.Unprotect(Old("SLBotManager.v1")) == "pw-1");
+    Check("password saved by 1.0.1 reads", Secrets.Unprotect(Old("AvieBoter.v1")) == "pw-1");
+    Check("password round trip", Secrets.Unprotect(Secrets.Protect("pw-2")) == "pw-2");
     // Exact HTTP answers from the live bot (2026-11-21, SecondBot ce1274f + patch), format kept byte for byte, names anonymised
     string samples = Path.Combine(AppContext.BaseDirectory, "samples");
     var st = BotReply.Parse(File.ReadAllText(Path.Combine(samples, "companionstatus.txt")));

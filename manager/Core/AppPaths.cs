@@ -17,11 +17,11 @@ public static class AppPaths
         string now = Path.Combine(local, "AvieBoter"), before = Path.Combine(local, "SLBotManager");
         if (!Directory.Exists(now) && Directory.Exists(before))
         {
-            // the former app's page engine can still hold files for a few seconds after it quit: try for up to 20 s
+            // the former app's page engine can still hold files for a few seconds after it quit: try for up to 10 s
             for (int i = 0; ; i++)
             {
                 try { Directory.Move(before, now); Migration = "moved"; break; }
-                catch (Exception e) when (i < 20) { Migration = e.Message; Thread.Sleep(1000); }
+                catch (Exception e) when (i < 10) { Migration = e.Message; Thread.Sleep(1000); }
                 catch (Exception e) { Migration = e.Message; return before; }   // nothing lost: keep using the old folder
             }
         }

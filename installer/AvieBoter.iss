@@ -133,11 +133,22 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    if not WizardIsTaskSelected('autostart') then
-      RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'AvieBoter');
-    // the former name's start-with-Windows entry and program folder (only when it really is that program)
-    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'SLBotManager');
+    // "Start with Windows" belongs to the app's Settings: an update (which runs without the task) must keep it.
+    // The former name's entry is carried over to the new name.
+    if RegValueExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'SLBotManager') then
+    begin
+      RegWriteStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'AvieBoter', '"' + ExpandConstant('{app}\AvieBoter.exe') + '" --tray');
+      RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'SLBotManager');
+    end;
+    // the former name's program folder (only when it really is that program)
     if FileExists(OldDir() + '\SLBotManager.exe') and (CompareText(OldDir(), ExpandConstant('{app}')) <> 0) then
       DelTree(OldDir(), True, True, True);
   end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  // the app's own "Start with Windows" entry goes with the app
+  if CurUninstallStep = usPostUninstall then
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'AvieBoter');
 end;

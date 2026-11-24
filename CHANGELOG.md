@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3
+- Passwords saved before the rename to AvieBoter can be read again (1.0.1 asked for them again).
+
+## 1.0.2
+- Updates keep "Start AvieBoter when I sign in to Windows" switched on (an update used to remove it).
+
 ## 1.0.1
 First public release (experimental).
 - Runs Second Life bot avatars from the Windows tray with a patched SecondBot: start/stop, status, seats, outfits,
