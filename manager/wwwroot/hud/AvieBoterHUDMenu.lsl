@@ -247,14 +247,26 @@ hoverMenu()
          "Down ▼", "Up ▲"]);
 }
 
+integer verNum(string v)      // "1.2.3" -> 1002003, to compare versions
+{
+    list p = llParseString2List(v, ["."], []);
+    return llList2Integer(p, 0) * 1000000 + llList2Integer(p, 1) * 1000 + llList2Integer(p, 2);
+}
+
 settingsMenu()
 {
     string t = "Hide text";
     if (!textOn()) t = "Show text";
-    dialog("settings", "\nHUD settings\n\nSize: Smaller / Bigger (or stretch the HUD in Edit).\nColour: the ring's colour when the bot is ready.\nText: the floating text above the HUD.",
+    string v = llLinksetDataRead("version");
+    string nw = llLinksetDataRead("newest");
+    string line = "This HUD: version " + v;
+    if (nw == "") line += " (the newest is not known yet – Update HUD asks).";
+    else if (verNum(nw) > verNum(v)) line += " – a newer HUD " + nw + " is ready: press Update HUD.";
+    else line += " – the newest.";
+    dialog("settings", "\nHUD settings\n\n" + line + "\n\nSize: Smaller / Bigger (or stretch the HUD in Edit).\nColour: the ring's colour when the bot is ready.\nText: the floating text above the HUD.\nUpdate HUD: a bot in this region brings the newest HUD.",
         ["◀ Menu", "Help", "Unpair…",
          "Reset look", "Colour ▸", t,
-         "Smaller", "Bigger"]);
+         "Smaller", "Bigger", "Update HUD"]);
 }
 
 confirm(string action, string question)
@@ -271,9 +283,12 @@ help()
         + "• Sit on… – paste an object's key (Edit → General → Copy Keys); the bot sits on it.\n"
         + "• Adjust ▸ – while the bot sits: Up/Down; Forward/Backward/Left/Right re-seat it a bit moved (seats without a fixed sit spot). Step changes the distance.\n"
         + "• Follow ▸ – the bot follows you; Closer/Farther and Behind/Left/Right/In front set its place (remembered).\n"
+        );
+    llOwnerSay("AvieBoter HUD help (2):\n"      // llOwnerSay takes at most 1024 bytes
         + "• Outfit… – type a folder name; the bot wears it instead of its outfit.   • More ▸ – Set home, Log off, Status.\n"
         + "• Teleport me – the bot sends you a teleport offer to where it is.   • Go home – the bot teleports home.\n"
         + "• More ▸ Hover ▸ – lift or lower the bot in steps (Reset = the height set in AvieBoter).\n"
+        + "• Settings ▸ Update HUD – shows this HUD's version; a bot in your region brings a newer one.\n"
         + "• Stand / Fly ON / Fly OFF – one button that follows the bot: Stand while it sits, else it takes off or lands.\n"
         + "• Settings ▸ – Smaller/Bigger (or stretch the HUD in Edit), ring colour, floating text on/off, Unpair.\n"
         + "• The ring: your colour = ready, amber = working, red = failed.\n"
@@ -428,6 +443,7 @@ default
                 return;
             }
             else if (msg == "Help") { help(); return; }
+            else if (msg == "Update HUD") { act("checkupdate", []); return; }
             else if (msg == "Unpair…") { confirm("unpair", "Remove " + botLabel() + " from this HUD?\n(The bot itself is not changed.)"); return; }
             settingsMenu();
             return;
