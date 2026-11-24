@@ -212,6 +212,8 @@ public class Rpc
                     if (r.Running) r.PushPeople();
                     return new JsonObject { ["restartNeeded"] = r.Running };
                 }
+            case "hud.update":
+                return await UpdateHud(S(a, 0));
             case "people.remove":
                 {
                     var r = Runner(S(a, 0));
@@ -261,8 +263,18 @@ public class Rpc
                     if (r.Running) _ = r.RunCommand("CompanionHudAutoUpdate", new[] { r.Profile.AutoUpdateHud ? "on" : "off" });
                     return null;
                 }
+            case "bot.saveEvents":
+                {
+                    var r = Runner(S(a, 0));
+                    r.Profile.SaveEvents = a[1]!.GetValue<bool>();
+                    app.Bots.Save(); app.Bots.Notify();
+                    return null;
+                }
             case "hud.script":
-                return File.ReadAllText(Path.Combine(AppPaths.WwwRoot, "hud", S(a, 0) == "menu" ? "AvieBoterHUDMenu.lsl" : "AvieBoterHUD.lsl"));
+                {
+                    string f = S(a, 0) == "menu" ? "AvieBoterHUDMenu.lsl" : "AvieBoterHUD.lsl";
+                    return File.ReadAllText(File.Exists(HudScripts.PathOf(f)) ? HudScripts.PathOf(f) : Path.Combine(AppPaths.WwwRoot, "hud", f));
+                }
             case "copy":
                 Clipboard.SetText(S(a, 0));
                 return null;
@@ -351,9 +363,13 @@ public class Rpc
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
         var p = existing?.Profile ?? new BotProfile();
+        // what only takes effect when the bot logs in again
+        string before = existing == null ? "" : string.Join("\u0001", p.Label, p.Username, p.Grid, p.LoginUri, string.Join(",", p.Masters),
+            p.AcceptTeleportsFromMasters, p.AcceptInventoryFromMasters);
+        double hoverBefore = p.HoverHeight;
         p.Label = label; p.Username = user; p.Grid = grid; p.LoginUri = uri; p.Masters = masters;
         p.AutoStart = o["autoStart"]?.GetValue<bool>() == true;
-        bool conf = o["joinConferences"]?.GetValue<bool>() != false;
+        bool conf = o["joinConferences"]?.GetValue<bool>() == true;     // off unless switched on
         bool confChanged = p.JoinConferences != conf;
         p.JoinConferences = conf;
         p.AcceptTeleportsFromMasters = o["acceptTeleports"]?.GetValue<bool>() != false;
@@ -365,7 +381,70 @@ public class Rpc
         // the conference switch works at once on a running bot
         if (confChanged && existing.Running) _ = existing.RunCommand("CompanionConferences", new[] { conf ? "on" : "off" });
         if (existing.Running) existing.PushPeople();     // who may use the bot with a HUD: at once
-        return new JsonObject { ["id"] = p.Id, ["restartNeeded"] = existing.Running };
+        // the hover height too
+        if (existing.Running && p.HoverHeight != hoverBefore)
+            _ = existing.RunCommand("CompanionSetHover", new[] { p.HoverHeight.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        string after = string.Join("\u0001", p.Label, p.Username, p.Grid, p.LoginUri, string.Join(",", p.Masters),
+            p.AcceptTeleportsFromMasters, p.AcceptInventoryFromMasters);
+        return new JsonObject { ["id"] = p.Id, ["restartNeeded"] = existing.Running && (before != after || !string.IsNullOrEmpty(password)) };
+    }
+
+    static string PairingLine(BotProfile p) => "SLB1|" + p.BotUuid + "|" + p.Secret + "|" + p.Label.Replace("|", "/");
+
+    /// <summary>Puts every bot this person may use into the HUD they wear. Silently through a bot their HUD already
+    /// talks to (its last known address, message signed with that bot's secret); otherwise each online bot sends them
+    /// an IM with a one-click link carrying a one-time code.</summary>
+    async Task<JsonNode> UpdateHud(string person)
+    {
+        person = (person ?? "").Trim();
+        if (person == "") throw new UserError("Whose HUD?");
+        var mine = app.Bots.All.Where(r => r.Profile.Masters.Any(m => Norm(m) == Norm(person))).ToList();
+        if (mine.Count == 0) throw new UserError(person + " is not among the people of any bot here.");
+        var known = mine.Where(r => !string.IsNullOrEmpty(r.Profile.BotUuid)).ToList();
+        var unknown = mine.Where(r => string.IsNullOrEmpty(r.Profile.BotUuid)).Select(r => r.Profile.Label).ToList();
+        var online = known.Where(r => r.Running && r.State == "online").ToList();
+        var result = new JsonObject { ["person"] = person, ["bots"] = new JsonArray(known.Select(r => (JsonNode)r.Profile.Label).ToArray()),
+            ["neverOnline"] = new JsonArray(unknown.Select(x => (JsonNode)x).ToArray()) };
+        if (online.Count == 0) { result["way"] = "none"; return result; }
+        // the newest HUD first, so the worn HUD can update itself when it says hello after the change
+        if (app.Settings.Data.CheckForUpdates) await app.CheckHud();
+        result["hud"] = HudScripts.InUse;
+
+        // 1. silently: the online bot that heard from this person's HUD most recently
+        var lines = string.Join("\n", known.Select(r => PairingLine(r.Profile)));
+        var addrs = new List<(BotRunner r, double age)>();
+        foreach (var r in online)
+        {
+            var res = await r.RunCommand("CompanionHudAddress", new[] { person });
+            if (!res.Ok || res.Reply == null) continue;
+            try { var j = JsonNode.Parse(res.Reply); addrs.Add((r, j?["age"]?.GetValue<double>() ?? 1e9)); } catch { }
+        }
+        foreach (var (r, _) in addrs.OrderBy(x => x.age))
+        {
+            long unix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            string body = r.Profile.BotUuid + " " + unix + " " + Secrets.Sha1Hex(lines + unix + r.Profile.Secret) + "\n" + lines;
+            var res = await r.RunCommand("CompanionHudDeliver", new[] { person, "CompanionAddBots", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(body)) });
+            Log.Info("update HUD of " + person + " through " + r.Profile.Label + ": " + (res.Ok ? res.Reply : "failed: " + res.Reply));
+            if (res.Ok && (res.Reply ?? "").StartsWith("added"))
+            {
+                result["way"] = "silent"; result["through"] = r.Profile.Label; result["answer"] = res.Reply;
+                return result;
+            }
+        }
+
+        // 2. a one-click invitation from each online bot
+        var invited = new JsonArray();
+        foreach (var r in online)
+        {
+            string code = Secrets.NewSecret(12);
+            var res = await r.RunCommand("CompanionInvite", new[] { person, code, Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(PairingLine(r.Profile))) });
+            Log.Info("HUD invitation to " + person + " from " + r.Profile.Label + ": " + (res.Ok ? "sent" : "failed: " + res.Reply));
+            if (res.Ok) invited.Add(r.Profile.Label);
+        }
+        result["way"] = invited.Count > 0 ? "invite" : "failed";
+        result["invited"] = invited;
+        result["offline"] = new JsonArray(known.Where(r => !online.Contains(r)).Select(r => (JsonNode)r.Profile.Label).ToArray());
+        return result;
     }
 
     static string Norm(string s) => new string(s.Where(c => !char.IsWhiteSpace(c)).ToArray()).ToLowerInvariant();
@@ -394,6 +473,7 @@ public class Rpc
                 ["unread"] = r.Unread,
                 ["joinConferences"] = p.JoinConferences,
                 ["autoUpdateHud"] = p.AutoUpdateHud,
+                ["saveEvents"] = p.SaveEvents,
                 ["recentOutfits"] = JsonSerializer.SerializeToNode(p.RecentOutfits),
                 ["seats"] = JsonSerializer.SerializeToNode(p.Seats.OrderByDescending(x => x.Uses).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase), JsonStore.Options),
             });

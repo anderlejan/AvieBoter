@@ -550,7 +550,8 @@
       <div class="row" style="align-items:center;gap:8px;margin-bottom:8px">
         <input class="in" id="radQ" placeholder="Filter names" style="max-width:220px" value="${esc(ui.radarQ || '')}">
         <span class="muted small" id="radInfo"></span><span class="grow"></span>
-        <button class="btn sm" id="radFiles" title="Daily files with who came and went – one JSON object per line, for other tools">📂 Comings & goings files</button>
+        <label class="switch small" title="Off: comings and goings are only listed here while the app runs. On: also written to daily files on this PC (one JSON object per line, for other tools)."><input type="checkbox" id="radSave" ${b.saveEvents ? 'checked' : ''}><span class="tr"></span>Save comings and goings to files</label>
+        <button class="btn sm" id="radFiles" title="Daily files with who came and went – one JSON object per line, for other tools">📂 Files</button>
       </div>
       <table class="tbl radar"><thead><tr><th>Name</th><th class="num">Distance</th><th>Where</th><th></th></tr></thead><tbody id="radBody"></tbody></table>
       <h2 style="margin-top:16px">Comings and goings</h2>
@@ -587,6 +588,7 @@
     };
     $('#radQ').oninput = () => { saveUi('radarQ', $('#radQ').value); draw(); };
     $('#radFiles').onclick = () => rpc('bot.openEvents', b.id).catch(fail);
+    $('#radSave').onchange = e => { b.saveEvents = e.target.checked; rpc('bot.saveEvents', b.id, e.target.checked).then(() => toast(e.target.checked ? 'Comings and goings of ' + b.label + ' are saved to daily files from now on.' : 'Comings and goings of ' + b.label + ' are no longer saved (files already written stay).')).catch(fail); };
     $('#radBody').onclick = e => {
       const btn = e.target.closest('[data-avm]') || e.target.closest('[data-av]');
       if (!btn) return;
@@ -629,14 +631,17 @@
       <p class="muted">The HUD is a shiny sphere with a glowing ring that <b>you</b> wear. Touch it for a menu that controls <b>${esc(botName)}</b> from wherever you are – no ports to open on this PC.</p>
       <h2>Get the HUD</h2>
       <p>The bot builds the HUD in Second Life and gives it to you – <b>already paired</b>. Accept it as ${esc(you)}, then in your inventory right-click it → <b>Add</b>. That's all.</p>
+      <p class="muted small">Already wearing a HUD? <b>Update my HUD</b> adds every bot of this app you may use to it (Bot ▸ in the HUD switches between them). It goes silently when a bot your HUD already uses is online; otherwise each online bot sends you an IM with a one-click link (it works once, for your HUD only).</p>
       <div class="actions">
         <button class="btn pri" id="hudSend" title="The bot builds a new HUD where it stands and gives it to ${esc((b.masters || [])[0] || 'you')}">🎁 Send me a new HUD</button>
+        <button class="btn" id="hudUpd" title="Puts every bot of this app that ${esc((b.masters || [])[0] || 'you')} may use into the HUD you already wear – no new HUD">🔄 Update my HUD</button>
         <span class="small" id="hudJob"></span>
       </div>
       <h2>People who use this bot</h2>
       <p class="muted">Everyone here can have their own HUD and use ${esc(botName)} at the same time – share the bot with a friend by adding them and sending them a HUD. Removing someone stops their HUD at once. Who came and went is listed under 📡 Radar.</p>
       <div class="people" id="ppl">${(b.masters || []).map((m, i) => `<div class="prow"><span class="grow">${i === 0 ? '👤' : '🤝'} <b>${esc(m)}</b>${i === 0 ? ' <span class="muted small">(you)</span>' : ''}</span>
         <button class="btn sm" data-psend="${esc(m)}" title="The bot builds a HUD and gives it to ${esc(m)}">🎁 Send HUD</button>
+        <button class="btn sm" data-pupd="${esc(m)}" title="Puts every bot of this app that ${esc(m)} may use into the HUD ${esc(m)} wears">🔄 Update HUD</button>
         ${i === 0 ? '' : `<button class="btn sm" data-prm="${esc(m)}" title="${esc(m)} may no longer use the bot">✕ Remove</button>`}</div>`).join('')}</div>
       <div class="actions"><input class="in" id="pplIn" placeholder="Friend's avatar name, e.g. Jane Resident" style="max-width:300px"><button class="btn" id="pplAdd">＋ Add and send a HUD</button></div>
       <p class="muted small">The bot needs a spot where it may build for a minute (your own land usually works; else a public sandbox such as Sandbox Cordova). The first time it also makes its <i>courier</i> – a tiny object it wears as its own HUD, which nobody sees – that delivers HUD updates.</p>
@@ -653,8 +658,8 @@
       </ol></details>
       <h2>Use it</h2>
       <p class="muted">Sit in your vehicle, touch the HUD, choose <b>Sit with me</b>. The bot teleports next to you and takes a free seat.</p>
-      <div style="margin-top:10px" class="hudmock"><span>Sit on…</span><span>Come to me</span><span>Sit with me</span><span>Outfit…</span><span>Adjust ▸</span><span>Stand</span><span>Go home</span><span>Set home…</span><span>Log off…</span><span>Status</span><span>Bot ▸</span><span>Settings ▸</span></div>
-      <p class="muted small">Adjust ▸ moves the seated bot: Up/Down always, Forward/Backward/Left/Right on seats without a fixed sit spot. Settings ▸ makes the HUD smaller or bigger (or stretch it in Edit), picks the ring colour and shows or hides the floating text. The ring shows the state: your colour = ready, amber = working, red = failed.</p>
+      <div style="margin-top:10px" class="hudmock"><span>Bot ▸</span><span>More ▸</span><span>Settings ▸</span><span>Teleport me</span><span>Fly ON</span><span>Adjust ▸</span><span>Sit on…</span><span>Outfit…</span><span>Go home</span><span>Sit with me</span><span>Come to me</span><span>Follow ▸</span></div>
+      <p class="muted small">Teleport me: the bot sends you a teleport offer to where it is. Fly ON / Fly OFF: the bot takes off or lands (the button says Stand while it sits). Adjust ▸ moves the seated bot: Up/Down always, Forward/Backward/Left/Right on seats without a fixed sit spot. Settings ▸ makes the HUD smaller or bigger (or stretch it in Edit), picks the ring colour and shows or hides the floating text. The ring shows the state: your colour = ready, amber = working, red = failed.</p>
       <h2>Security</h2>
       <p class="muted">Commands from the HUD are signed with this bot's secret, so other people's scripts cannot control your bot. If a HUD is lost or given away, make a new secret – every HUD then has to be paired again.</p>
       <div class="actions"><button class="btn" id="hudSecret">Make a new secret…</button></div>`;
@@ -663,8 +668,9 @@
       catch (e) { $('#hudJob').textContent = ''; fail(e); }
     };
     $('#ppl').onclick = async e => {
-      const sd = e.target.closest('[data-psend]'), rm = e.target.closest('[data-prm]');
+      const sd = e.target.closest('[data-psend]'), rm = e.target.closest('[data-prm]'), up = e.target.closest('[data-pupd]');
       if (sd) sendHud(sd.dataset.psend);
+      if (up) updateHud(up.dataset.pupd, up);
       if (rm) { try { await rpc('people.remove', b.id, rm.dataset.prm); toast(rm.dataset.prm + ' can no longer use the bot'); await refresh(); renderMain(); } catch (er) { fail(er); } }
     };
     $('#pplAdd').onclick = async () => {
@@ -677,6 +683,7 @@
         await refresh(); renderMain();
       } catch (er) { fail(er); }
     };
+    $('#hudUpd').onclick = e => updateHud((b.masters || [])[0] || '', e.currentTarget);
     $('#hudSend').onclick = async () => {
       const to = (b.masters || [])[0] || '';
       try { $('#hudJob').textContent = 'Asking the bot…'; await rpc('hud.send', b.id, to); toast('The bot is building your HUD – about a minute'); }
@@ -695,6 +702,21 @@
     $('#hudSecret').onclick = () => confirmDlg('Make a new secret?', 'Every HUD paired with this bot stops working until you paste the new pairing line. A running bot is restarted.', 'Make new secret', async () => {
       try { const r = await rpc('bot.newSecret', b.id); if (r === 'restart') await rpc('bot.restart', b.id); toast('New secret made. Copy the pairing line again.'); } catch (e) { fail(e); }
     });
+  }
+
+  async function updateHud(person, btn) {
+    if (!person) { toast('Add your avatar under ✎ Bot settings first', 'bad'); return; }
+    if (btn) btn.disabled = true;
+    try {
+      const r = await rpc('hud.update', person);
+      const list = a => (a || []).join(', ');
+      if (r.way === 'silent') toast('Done: ' + person + '\'s HUD now has ' + list(r.bots) + ' (through ' + r.through + ')' + (r.hud ? '; it also checks for HUD ' + r.hud : '') + '.');
+      else if (r.way === 'invite') toast(list(r.invited) + ' sent ' + person + ' an IM with a one-click link – wearing the HUD, ' + person + ' clicks it once per bot.' + ((r.offline || []).length ? ' Offline, not sent: ' + list(r.offline) + '.' : ''));
+      else if (r.way === 'none') toast('No bot that ' + person + ' may use is online – start one of them first.', 'bad');
+      else toast('That did not work – see the log.', 'bad');
+      if ((r.neverOnline || []).length) toast(list(r.neverOnline) + ': start once first (the app needs its avatar key).', 'bad');
+    } catch (e) { fail(e); }
+    if (btn) btn.disabled = false;
   }
 
   function updateHudLive(b) {
@@ -959,9 +981,9 @@
         <label class="switch"><input type="checkbox" id="fAuto" ${b && b.autoStart ? 'checked' : ''}><span class="tr"></span>Start this bot when the app starts</label><br>
         <label class="switch" style="margin-top:6px"><input type="checkbox" id="fTp" ${!b || b.acceptTeleports ? 'checked' : ''}><span class="tr"></span>Accept teleport offers from these avatars</label><br>
         <label class="switch" style="margin-top:6px"><input type="checkbox" id="fInv" ${!b || b.acceptInventory ? 'checked' : ''}><span class="tr"></span>Accept items (e.g. outfits) from these avatars</label><br>
-        <label class="switch" style="margin-top:6px" title="Off: when someone pulls the bot into a conference (an ad-hoc group IM), it leaves at once; nothing is shown or announced"><input type="checkbox" id="fConf" ${!b || b.joinConferences !== false ? 'checked' : ''}><span class="tr"></span>Take part in conference chats (off = leave them at once)</label></div></div>
-      <div class="row"><label>Hover height</label><input class="in" id="fHover" type="number" step="0.05" min="-2" max="2" style="width:100px" value="${b ? b.hoverHeight : 0.1}">
-        <span class="chips">${[0, 0.1, 0.2, 0.3].map(v => `<span class="chip" data-hover="${v}">${v}</span>`).join('')}</span></div>
+        <label class="switch" style="margin-top:6px" title="Off: when someone pulls the bot into a conference (an ad-hoc group IM), it leaves at once; nothing is shown or announced"><input type="checkbox" id="fConf" ${b && b.joinConferences === true ? 'checked' : ''}><span class="tr"></span>Take part in conference chats (off = leave them at once)</label></div></div>
+      <div class="row"><label>Hover height</label><input class="in" id="fHover" type="number" step="0.05" min="-2" max="2" style="width:100px" value="${b ? b.hoverHeight : 0}">
+        <span class="chips">${[0, 0.1, 0.2, 0.3].map(v => `<span class="chip" data-hover="${v}">${v}</span>`).join('')}</span><span class="muted small" style="margin-left:8px">m · a running bot changes at once</span></div>
       <div class="err" id="fErr"></div>`;
   }
 
@@ -1128,10 +1150,10 @@
       </div>
       <div class="actions" style="margin-top:8px"><button class="btn" id="nTest">🔔 Test popup and sound</button></div>
       <h3 style="margin-top:18px">Updates</h3>
-      <div class="note">Once a day AvieBoter asks GitHub (github.com/anderlejan/AvieBoter) whether there is a newer version. Nothing else is sent. Updates keep your bots, passwords, people and chats.</div>
+      <div class="note">Once a day AvieBoter asks GitHub (github.com/anderlejan/AvieBoter) whether there is a newer version of the app or of the HUD. Nothing else is sent. Updates keep your bots, passwords, people and chats; a newer HUD needs no app update – the bots hand it out and worn HUDs update themselves.</div>
       <label class="switch"><input type="checkbox" id="uCheck" ${(S.update || {}).check ? 'checked' : ''}><span class="tr"></span>Check for updates once a day</label><br>
       <label class="switch" style="margin-top:8px"><input type="checkbox" id="uAuto" ${(S.update || {}).auto ? 'checked' : ''}><span class="tr"></span>Install updates by itself while no bot is online (running bots are never logged out for an update)</label>
-      <div class="row" style="margin-top:10px"><span id="uState" class="grow"></span><button class="btn" id="uNow">Check now</button><button class="btn pri hidden" id="uInst">Install</button></div>
+      <div class="row" style="margin-top:10px"><span class="grow"><span id="uState"></span><br><span class="muted small" id="uHud"></span></span><button class="btn" id="uNow">Check now</button><button class="btn pri hidden" id="uInst">Install</button></div>
       <h3 style="margin-top:18px">Other</h3>
       <label class="switch"><input type="checkbox" id="sNotes" ${s.showNotesButton ? 'checked' : ''}><span class="tr"></span>Show the 📝 User notes button</label>
       <div class="actions" style="margin-top:12px"><button class="btn" id="sData">📂 Open data folder</button><button class="btn danger" id="sQuit">⏻ Quit AvieBoter</button></div>
@@ -1150,7 +1172,7 @@
     sw('#nImPop', 'notifyImPopup'); sw('#nImSnd', 'notifyImSound'); sw('#nLcPop', 'notifyLocalPopup'); sw('#nLcSnd', 'notifyLocalSound');
     $('#nTest', r).onclick = () => rpc('notify.test').catch(fail);
     $('#sClose', r).onclick = e => { const v = e.target.closest('[data-v]'); if (!v) return; s.closeAction = v.dataset.v; $('#sClose', r).querySelectorAll('button').forEach(x => x.classList.toggle('on', x === v)); rpc('setting', 'closeAction', s.closeAction).catch(fail); };
-    const uShow = () => { const u = S.update || {}; $('#uState', r).textContent = updateText(u); $('#uInst', r).classList.toggle('hidden', !u.available || u.status === 'installing' || /^downloading/.test(u.status || '')); };
+    const uShow = () => { const u = S.update || {}; $('#uState', r).textContent = updateText(u); $('#uHud', r).textContent = u.hud ? 'HUD handed out by the bots: ' + u.hud : ''; $('#uInst', r).classList.toggle('hidden', !u.available || u.status === 'installing' || /^downloading/.test(u.status || '')); };
     uShow(); settingsUpdate = uShow;
     const usw = (id, key, prop) => $(id, r).onchange = e => { S.update = S.update || {}; S.update[prop] = e.target.checked; rpc('setting', key, e.target.checked).then(uShow).catch(fail); };
     usw('#uCheck', 'checkForUpdates', 'check'); usw('#uAuto', 'installUpdatesAutomatically', 'auto');
@@ -1206,10 +1228,13 @@
       <p>See the 🎮 HUD section of a bot. "Send me a new HUD" makes the bot build a HUD where it stands (it needs a spot where it may build) and give it to you, already paired. Such a HUD has a tiny second prim with an updater: when the app has a newer HUD, it updates itself a few seconds after you wear it, keeping its pairings – the bot hands the new script over with its courier, a small object it wears as its own HUD. A HUD you made by hand from the copied script works too, but you update it by pasting the new script.</p>
       <h3>Sharing a bot with friends</h3>
       <p>In a bot's 🎮 HUD section, add your friend under "People who use this bot" and send them a HUD – it arrives paired. Everyone listed can use the bot at the same time with their own HUD; removing someone stops their HUD at once.</p>
+      <p>One HUD can control several bots (Bot ▸ switches). 🔄 Update HUD next to a person puts every bot here that this person may use into the HUD they already wear. If a bot their HUD already uses is online, it goes silently; otherwise each online bot sends them an IM with a link – wearing the HUD, they click it once per bot. The link carries a one-time code that only works for their own HUD, so nobody who overhears it can use it.</p>
+      <p>HUD → Teleport me: the bot sends you a teleport offer to where it is. HUD → Fly ON / Fly OFF makes it take off or land; while it sits, the same button says Stand.</p>
+      <p>New HUD versions can come from GitHub without a new AvieBoter: the daily check (Settings → Updates) also looks for a newer HUD that works with your version. The bots then hand it out, and a worn HUD updates itself the next time it talks to a bot in the same region – Update HUD makes it ask at once.</p>
       <h3>Radar, comings and goings</h3>
-      <p>📡 Radar lists the avatars around the bot (its region and the neighbouring ones), nearest first; ⋯ on a name offers an IM, going to them, following them, offering them a teleport, their profile and more. Below it, "Comings and goings" lists arrivals and departures in the bot's region, HUDs worn and taken off, and people starting to use the bot. They are also saved to daily files (📂, one JSON object per line: t, type, uuid, name, region, extra, bot) for other tools.</p>
+      <p>📡 Radar lists the avatars around the bot (its region and the neighbouring ones), nearest first; ⋯ on a name offers an IM, going to them, following them, offering them a teleport, their profile and more. Below it, "Comings and goings" lists arrivals and departures in the bot's region, HUDs worn and taken off, and people starting to use the bot. With "Save comings and goings to files" switched on (off by default, per bot) they are also written to daily files (📂 Files, one JSON object per line: t, type, uuid, name, region, extra, bot) for other tools. The watching itself sends nothing to the grid: it uses the positions Second Life sends every viewer anyway.</p>
       <h3>Following and getting to you</h3>
-      <p>HUD → Follow ▸ makes the bot follow you at a place you choose (Closer/Farther, behind, beside, in front – remembered). "Come to me" and "Sit with me" walk when you are close, else teleport; when a parcel's landing point or a telehub reroutes the teleport, the bot walks the rest, and if it still cannot reach you it sends you a teleport request – click Offer Teleport in it and the bot accepts.</p>
+      <p>HUD → Follow ▸ makes the bot follow you at a place you choose (Closer/Farther, behind, beside, in front – remembered). Blocked by walls, it teleports next to you; if teleports do not get it to you, it sends you a teleport request – click Offer Teleport. "Come to me" and "Sit with me" walk when you are close, else teleport; when a parcel's landing point or a telehub reroutes the teleport, the bot walks the rest, and if it still cannot reach you it sends you a teleport request – click Offer Teleport in it and the bot accepts.</p>
       <h3>Finding your way back</h3>
       <p>◀ and ▶ at the top left (or Alt+← / Alt+→, or the mouse's back and forward buttons) go back and forward through the places you opened, like a web browser; 🕘 lists them all.</p>
       <p>"Sit with me": sit on a vehicle first, then choose it – the bot teleports next to you and sits on a free seat. "Come to me" only teleports it beside you.</p>

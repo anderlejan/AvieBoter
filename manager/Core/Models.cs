@@ -50,11 +50,12 @@ public class BotProfile
     public string BotName { get; set; } = "";
     public bool AcceptTeleportsFromMasters { get; set; } = true;
     public bool AcceptInventoryFromMasters { get; set; } = true;
-    public double HoverHeight { get; set; } = 0.1;
+    public double HoverHeight { get; set; } = 0;
     public DateTime Created { get; set; } = DateTime.Now;
     public List<Seat> Seats { get; set; } = new();   // saved "sit on" objects, most used first in the UI
-    public bool JoinConferences { get; set; } = true;   // false: the bot leaves conference chats at once
+    public bool JoinConferences { get; set; } = false;  // false (default): the bot leaves conference chats at once
     public List<string> RecentOutfits { get; set; } = new();
+    public bool SaveEvents { get; set; } = false;     // write comings and goings to daily files (off: only the list in the app)
     public bool AutoUpdateHud { get; set; } = true;   // HUDs made by the bot update themselves when the app has a newer one
 }
 

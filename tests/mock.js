@@ -3,7 +3,7 @@
   const listeners=[]; let bots=[]; const settings={theme:'storm',fontPercent:100,startInTray:false,startBotsWithApp:true,closeAction:'tray',showNotesButton:true,notifyImPopup:true,notifyImSound:true,notifyLocalPopup:false,notifyLocalSound:false,recentSlurls:[],ui:{},lastBot:'',lastSection:'overview'};
   let notes={version:2,notes:[]};
   window.__calls=[];
-  window.__upd={current:'1.0.0',check:true,auto:true,lastCheck:null,status:'',available:null,botsOnline:false};
+  window.__upd={current:'1.1.1',hud:'1.1.1',check:true,auto:true,lastCheck:null,status:'',available:null,botsOnline:false};
   window.__pushUpdate = u => { window.__upd=u; listeners.forEach(f => f({data:{type:'update', update:u}})); };
   window.__pushOpen = (bot, section) => listeners.forEach(f => f({data:{type:'open', bot, section}}));
   function reply(id,ok,v,err){ setTimeout(()=>listeners.forEach(f=>f({data:{id,ok,v,err}})),5); }
@@ -11,8 +11,9 @@
     window.__calls.push(m.m);
     const a=m.a||[];
     switch(m.m){
-      case 'init': return reply(m.id,true,{version:'1.0.0',settings,bots,dataDir:'C:\\data',botExeFound:true,update:window.__upd,notesConfig:null});
+      case 'init': return reply(m.id,true,{version:'1.1.1',settings,bots,dataDir:'C:\\data',botExeFound:true,update:window.__upd,notesConfig:null});
       case 'update.check': window.__upd=Object.assign({},window.__upd,{available:{version:'1.0.1',page:'https://example.invalid/r'},lastCheck:new Date().toISOString()}); return reply(m.id,true,window.__upd);
+      case 'hud.update': window.__hudUpd=a[0]; return reply(m.id,true,{way:'silent',person:a[0],bots:['Passenger'],through:'Passenger',answer:'added 1',neverOnline:[]});
       case 'update.install': window.__installed=true; return reply(m.id,true,null);
       case 'state': return reply(m.id,true,bots);
       case 'bot.save': { const o=a[0]; let b=bots.find(x=>x.id===o.id); if(!b){ b={id:'b'+(bots.length+1),state:'stopped',status:null,ramMb:0,cpu:0,hasPassword:!!a[1]}; bots.push(b);} Object.assign(b,o,{id:b.id}); return reply(m.id,true,{id:b.id}); }

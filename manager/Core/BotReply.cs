@@ -30,8 +30,10 @@ public static class BotReply
         return new(key, val, raw);
     }
 
-    /// <summary>The app's 3-second polls (status, chat) are not worth a log line.</summary>
+    /// <summary>The app's regular polls (status, chat, comings and goings, the open Radar) are not worth a log line.</summary>
+    static readonly string[] Polls = ["CompanionStatus", "CompanionChatSince", "CompanionEventsSince", "CompanionRadar"];
+
     public static bool IsPollNoise(string line) =>
         line.Contains("Command log:") && line.Contains("\"source\":\"HTTP\"")
-        && (line.Contains("\"command\":\"CompanionStatus\"") || line.Contains("\"command\":\"CompanionChatSince\""));
+        && Polls.Any(p => line.Contains("\"command\":\"" + p + "\""));
 }

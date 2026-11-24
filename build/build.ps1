@@ -79,6 +79,8 @@ if ($py) {
     $a = (Get-Content $tmp -Raw | ConvertFrom-Json | ForEach-Object { $_.name }) -join ','
     $b = (Get-Content (Join-Path $src 'manager\wwwroot\commands.json') -Raw | ConvertFrom-Json | ForEach-Object { $_.name }) -join ','
     if ($a -ne $b) { throw 'manager\wwwroot\commands.json is out of date - regenerate it with build\extract-commands.py' }
+    Step 'Checking hud\hud.json (the HUD manifest the app reads from GitHub)'
+    Run $py.Source @('-I', (Join-Path $src 'build\hud-manifest.py'), '--check')
 } else { Write-Host 'python not found - commands.json not re-checked' }
 
 # ---- manager ----

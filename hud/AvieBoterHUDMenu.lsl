@@ -9,6 +9,7 @@ integer dialogChannel;
 integer dialogListen = 0;
 string  menu = "main";
 string  lastStatus = "not asked yet";
+integer pose = 0;      // the bot as last seen: 2 seated, 1 flying, 0 standing
 string  line2 = "";
 string  pendingAction = "";
 integer following = FALSE;
@@ -150,6 +151,13 @@ textBox(string m, string text)
     llTextBox(owner, text, dialogChannel);
 }
 
+string poseButton()
+{
+    if (pose == 2) return "Stand";
+    if (pose == 1) return "Fly OFF";
+    return "Fly ON";
+}
+
 mainMenu()
 {
     if (botCount() == 0)
@@ -159,7 +167,7 @@ mainMenu()
     }
     dialog("main", "\nBot: " + botLabel() + "\nLast status: " + lastStatus + "\n\nWhat should the bot do?",
         ["Bot ▸", "More ▸", "Settings ▸",
-         "Status", "Stand", "Adjust ▸",
+         "Teleport me", poseButton(), "Adjust ▸",
          "Sit on…", "Outfit…", "Go home",
          "Sit with me", "Come to me", "Follow ▸"]);
 }
@@ -224,7 +232,7 @@ followMenu()
 
 moreMenu()
 {
-    dialog("more", "\nMore for " + botLabel() + ":", ["◀ Menu", "Set home…", "Log off…"]);
+    dialog("more", "\nMore for " + botLabel() + ":\n\nStatus: what the bot is doing and where.", ["◀ Menu", "Set home…", "Log off…", "Status"]);
 }
 
 settingsMenu()
@@ -251,11 +259,12 @@ help()
         + "• Sit on… – paste an object's key (Edit → General → Copy Keys); the bot sits on it.\n"
         + "• Adjust ▸ – while the bot sits: Up/Down; Forward/Backward/Left/Right re-seat it a bit moved (seats without a fixed sit spot). Step changes the distance.\n"
         + "• Follow ▸ – the bot follows you; Closer/Farther and Behind/Left/Right/In front set its place (remembered).\n"
-        + "• Outfit… – type a folder name; the bot wears it instead of its outfit.   • More ▸ – Set home, Log off.\n"
-        + "• Go home – the bot teleports home.   • Status – where it is.\n"
+        + "• Outfit… – type a folder name; the bot wears it instead of its outfit.   • More ▸ – Set home, Log off, Status.\n"
+        + "• Teleport me – the bot sends you a teleport offer to where it is.   • Go home – the bot teleports home.\n"
+        + "• Stand / Fly ON / Fly OFF – one button that follows the bot: Stand while it sits, else it takes off or lands.\n"
         + "• Settings ▸ – Smaller/Bigger (or stretch the HUD in Edit), ring colour, floating text on/off, Unpair.\n"
         + "• The ring: your colour = ready, amber = working, red = failed.\n"
-        + "• Another bot: paste its pairing line (/7 pair SLB1|…). Bot ▸ switches between bots.");
+        + "• Another bot: in AvieBoter press Update HUD (or paste its pairing line, /7 pair SLB1|…). Bot ▸ switches between bots.");
 }
 
 default
@@ -283,11 +292,13 @@ default
         if (str == "slbm-ui|ring") ringState((string)id);
         else if (str == "slbm-ui|text") { line2 = (string)id; showText(); }
         else if (str == "slbm-ui|status") lastStatus = (string)id;
+        else if (str == "slbm-ui|pose") pose = (integer)((string)id);
     }
 
     touch_start(integer n)
     {
         if (llDetectedKey(0) != owner) return;
+        act("quietstatus", []);     // keeps Stand / Fly ON / Fly OFF up to date
         mainMenu();
     }
 
@@ -400,7 +411,10 @@ default
         if (msg == "Sit with me") { following = FALSE; act("sitwithme", []); }
         else if (msg == "Come to me") { following = FALSE; act("come", []); }
         else if (msg == "Stand") act("stand", []);
+        else if (msg == "Fly ON") act("fly", ["on"]);
+        else if (msg == "Fly OFF") act("fly", ["off"]);
         else if (msg == "Status") act("status", []);
+        else if (msg == "Teleport me") act("lure", []);
         else if (msg == "Go home") act("gohome", []);
         else if (msg == "Log off…") confirm("logoff", "Log " + botLabel() + " out of Second Life?");
         else if (msg == "Set home…") confirm("sethome", "Make the place where " + botLabel() + " stands now its home?\n(Second Life allows this only on land where the bot may set home.)");

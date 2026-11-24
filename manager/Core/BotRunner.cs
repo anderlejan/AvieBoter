@@ -153,9 +153,12 @@ public class BotRunner
         psi.Environment["DOTNET_GCConserveMemory"] = "7";
         psi.Environment["SLBM_LEAVE_CONFERENCES"] = Profile.JoinConferences ? "0" : "1";
         // HUD making and automatic HUD updates (the bot reads the scripts from the app's folder)
-        psi.Environment["SLBM_HUD_SCRIPT"] = Path.Combine(AppPaths.WwwRoot, "hud", "AvieBoterHUD.lsl");
-        psi.Environment["SLBM_HUD_UPDATER"] = Path.Combine(AppPaths.WwwRoot, "hud", "AvieBoterHUDUpdater.lsl");
-        psi.Environment["SLBM_HUD_MENU"] = Path.Combine(AppPaths.WwwRoot, "hud", "AvieBoterHUDMenu.lsl");
+        // the newest compatible set: the app's own or a newer one from GitHub (HudScripts); read live by the bot
+        bool cur = File.Exists(HudScripts.PathOf("AvieBoterHUD.lsl"));
+        string HudFile(string f) => cur ? HudScripts.PathOf(f) : Path.Combine(AppPaths.WwwRoot, "hud", f);
+        psi.Environment["SLBM_HUD_SCRIPT"] = HudFile("AvieBoterHUD.lsl");
+        psi.Environment["SLBM_HUD_UPDATER"] = HudFile("AvieBoterHUDUpdater.lsl");
+        psi.Environment["SLBM_HUD_MENU"] = HudFile("AvieBoterHUDMenu.lsl");
         psi.Environment["SLBM_HUD_AUTOUPDATE"] = Profile.AutoUpdateHud ? "1" : "0";
         psi.Environment["SLBM_BOT_LABEL"] = Profile.Label;
         psi.Environment["SLBM_PEOPLE"] = PeopleCsv();
@@ -358,7 +361,7 @@ public class BotRunner
             lines.Append(e.ToJsonString()).Append(Environment.NewLine);
         }
         if (seq > botEventSeq) botEventSeq = seq;
-        if (lines.Length == 0) return;
+        if (lines.Length == 0 || !Profile.SaveEvents) return;      // files only when switched on (Radar)
         try
         {
             string dir = AppPaths.Ensure(Path.Combine(Dir, "events"));

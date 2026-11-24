@@ -87,6 +87,14 @@ with sync_playwright() as p:
     pg.keyboard.press('Escape'); pg.wait_for_timeout(200)
     pg.click('#navList'); pg.wait_for_timeout(200); print('history:', pg.locator('.menu').inner_text().replace('\n',' / ')[:300]); pg.mouse.click(5,700)
     pg.screenshot(path=os.path.join(out,'s_nav.png'))
+    # 1.1.0: defaults, Update HUD, Teleport me
+    pg.click('#btnAdd'); pg.wait_for_timeout(200)
+    print('new bot: conferences off:', not pg.is_checked('#fConf'), '| hover 0:', pg.input_value('#fHover') == '0'); pg.keyboard.press('Escape'); pg.wait_for_timeout(200)
+    pg.click('[data-sec="hud"]'); pg.wait_for_timeout(300)
+    print('hud menu shows Teleport me:', 'Teleport me' in pg.locator('.hudmock').inner_text())
+    pg.click('#hudUpd'); pg.wait_for_timeout(300); print('update my HUD asked for:', pg.evaluate('window.__hudUpd'), '| toast:', pg.locator('#toast').inner_text()[:60])
+    print('per-person Update HUD buttons:', pg.locator('[data-pupd]').count())
+    pg.click('[data-sec="overview"]'); pg.wait_for_timeout(200)
     # 1.0.0: updates
     print('banner hidden at start:', pg.locator('#updBanner.hidden').count()==1)
     pg.click('#btnSettings'); pg.wait_for_timeout(200); print('update state:', pg.locator('#uState').inner_text())

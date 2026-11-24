@@ -1,4 +1,4 @@
-// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.0.0 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
+// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.1.1 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
 // YOU wear this HUD (on your own avatar, not on the bot). It controls the bot avatar that runs in AvieBoter.
 // Easiest: in AvieBoter, tab "HUD", press "Send me a new HUD" - the bot builds it, paired, and gives it to you.
 // A HUD made that way updates itself when the app has a newer one (its ring prim holds the updater).
@@ -6,7 +6,7 @@
 // then paste the pairing line from AvieBoter into local chat:  /7 pair SLB1|<bot key>|<secret>|<bot name>
 // Commands go to the bot as signed instant messages; answers come back to this HUD's own web address.
 
-string  VERSION = "1.0.0";
+string  VERSION = "1.1.1";
 integer PAIR_CHANNEL = 7;
 integer UPDATE_PIN = 7710422;     // must match the updater script
 integer helloSent = FALSE;
@@ -16,6 +16,9 @@ string  myUrl = "";
 key     urlRequest = NULL_KEY;
 integer pairListen = 0;
 string  lastStatus = "not asked yet";
+key     inviteBot = NULL_KEY;     // a pairing invitation this HUD answered (pairwith): which bot, which code
+string  inviteCode = "";
+integer quietStatus = FALSE;     // a status asked for the menu only (no chat)
 
 // ---------- stored bots (linkset data, shared with the menu script) ----------
 list bots()              // strided: key, secret, label
@@ -46,7 +49,7 @@ requestUrl()
 {
     if (myUrl != "") llReleaseURL(myUrl);
     myUrl = "";
-    urlRequest = llRequestURL();
+    urlRequest = llRequestSecureURL();     // https: pairing lines travel to this address
 }
 
 string replyTarget()
@@ -149,8 +152,11 @@ doAction(string a, list p)
 {
     if (a == "sitwithme") sitWithMe();
     else if (a == "come") { llOwnerSay(botLabel() + " is coming to you…"); showText("coming…"); send("CompanionCome", here() + [replyTarget()]); }
-    else if (a == "stand") { send("Stand", []); showText("standing"); }
+    else if (a == "stand") { send("Stand", []); showText("standing"); ui("pose", "0"); }
     else if (a == "status") send("CompanionStatus", []);
+    else if (a == "quietstatus") { quietStatus = TRUE; send("CompanionStatus", []); }
+    else if (a == "fly") { llOwnerSay(botLabel() + (llList2String(p, 0) == "on" ? " takes off…" : " lands…")); send("CompanionFly", [llList2String(p, 0), replyTarget()]); }
+    else if (a == "lure") { llOwnerSay(botLabel() + " is sending you a teleport offer…"); send("CompanionTeleportMe", []); }
     else if (a == "gohome") { llOwnerSay(botLabel() + " is teleporting to its home location."); send("GoHome", []); showText("going home"); }
     else if (a == "logoff") { llOwnerSay("Logging " + botLabel() + " out."); showText("logging out"); send("Logoff", []); }
     else if (a == "sethome") { llOwnerSay("Setting " + botLabel() + "'s home where it stands now…"); send("CompanionSetHome", []); }
@@ -188,14 +194,8 @@ doAction(string a, list p)
 }
 
 // ---------- pairing ----------
-pair(string code)
+integer addPairing(list p)     // p = SLB1, key, secret, label...; returns the bot's place in bots()
 {
-    list p = llParseStringKeepNulls(code, ["|"], []);
-    if (llList2String(p, 0) != "SLB1" || llGetListLength(p) < 4 || (key)llList2String(p, 1) == NULL_KEY)
-    {
-        llOwnerSay("That pairing line is not valid. Copy it again from AvieBoter (tab HUD).");
-        return;
-    }
     key k = (key)llList2String(p, 1);
     string secret = llList2String(p, 2);
     string label = llDumpList2String(llList2List(p, 3, -1), "/");
@@ -204,7 +204,62 @@ pair(string code)
     if (at != -1 && at % 3 == 0) b = llListReplaceList(b, [(string)k, secret, label], at, at + 2);
     else { b += [(string)k, secret, label]; at = llGetListLength(b) - 3; }
     saveBots(b);
+    return at;
+}
+
+// the app adds bots to this worn HUD through a bot already paired with it:
+// first line "<bot key> <unix> <sha1(lines + unix + that bot's secret)>", then one pairing line per bot
+string addBots(string body)
+{
+    list lines = llParseString2List(body, ["\n"], []);
+    list h = llParseString2List(llList2String(lines, 0), [" "], []);
+    list b = bots();
+    integer at = llListFindList(b, [llList2String(h, 0)]);
+    if (at == -1 || at % 3 != 0) return "refused: unknown sender";
+    integer unix = (integer)llList2String(h, 1);
+    if (llAbs(llGetUnixTime() - unix) > 300) return "refused: too old";
+    lines = llDeleteSubList(lines, 0, 0);
+    if (llSHA1String(llDumpList2String(lines, "\n") + (string)unix + llList2String(b, at + 1)) != llList2String(h, 2)) return "refused: bad signature";
+    integer n = 0;
+    list names = [];
+    integer i;
+    for (i = 0; i < llGetListLength(lines); ++i)
+    {
+        list p = llParseStringKeepNulls(llList2String(lines, i), ["|"], []);
+        if (llList2String(p, 0) == "SLB1" && llGetListLength(p) >= 4)
+        {
+            if (llListFindList(bots(), [llList2String(p, 1)]) == -1) { ++n; names += llDumpList2String(llList2List(p, 3, -1), "/"); }
+            addPairing(p);
+        }
+    }
+    if (n) llOwnerSay("Added to this HUD: " + llDumpList2String(names, ", ") + ". Choose the bot under Bot ▸.");
+    helloSent = FALSE;      // say hello again: the bot checks this HUD's version and brings a newer one
+    hello();
+    return "added " + (string)n;
+}
+
+// the answer to a pairing invitation: "<pairing line>\n<code>"
+string pairByCode(string body)
+{
+    list lines = llParseString2List(body, ["\n"], []);
+    list p = llParseStringKeepNulls(llList2String(lines, 0), ["|"], []);
+    if (inviteCode == "" || llList2String(lines, 1) != inviteCode || (key)llList2String(p, 1) != inviteBot) return "refused";
+    inviteCode = "";
+    pair(llList2String(lines, 0));
+    return "paired";
+}
+
+pair(string code)
+{
+    list p = llParseStringKeepNulls(code, ["|"], []);
+    if (llList2String(p, 0) != "SLB1" || llGetListLength(p) < 4 || (key)llList2String(p, 1) == NULL_KEY)
+    {
+        llOwnerSay("That pairing line is not valid. Copy it again from AvieBoter (tab HUD).");
+        return;
+    }
+    integer at = addPairing(p);
     llLinksetDataWrite("active", (string)(at / 3));
+    string label = llList2String(bots(), at + 2);
     setStatus("paired");
     showText("paired");
     llOwnerSay("Paired: this HUD, worn by you (" + llKey2Name(owner) + "), now controls the bot " + label + ". Touch the HUD for the menu. Asking the bot for its status…");
@@ -236,6 +291,10 @@ string describeStatus(string st)
 {
     // st = CompanionStatus json object
     if (llJsonGetValue(st, ["online"]) != JSON_TRUE) return "offline";
+    // the menu's Stand / Fly ON / Fly OFF button follows the bot: 2 seated, 1 flying, 0 standing
+    if (llJsonGetValue(st, ["sitting"]) == JSON_TRUE) ui("pose", "2");
+    else if (llJsonGetValue(st, ["flying"]) == JSON_TRUE) ui("pose", "1");
+    else ui("pose", "0");
     string s = "online in " + llJsonGetValue(st, ["region"]) + " <" + llJsonGetValue(st, ["x"]) + ", " + llJsonGetValue(st, ["y"]) + ", " + llJsonGetValue(st, ["z"]) + ">";
     if (llJsonGetValue(st, ["sitting"]) == JSON_TRUE)
     {
@@ -243,6 +302,7 @@ string describeStatus(string st)
         if (seat == "" || seat == JSON_INVALID) seat = "something";
         s += ", sitting on " + seat;
     }
+    else if (llJsonGetValue(st, ["flying"]) == JSON_TRUE) s += ", flying";
     return s;
 }
 
@@ -289,6 +349,7 @@ handleReply(string command, string reply)
     {
         setStatus(describeStatus(r));
         if (llJsonGetValue(r, ["online"]) == JSON_TRUE) ui("ring", ""); else ui("ring", "error");
+        if (quietStatus) { quietStatus = FALSE; return; }
         llOwnerSay(botLabel() + ": " + lastStatus);
         showText(llGetSubString(lastStatus, 0, 60));
         return;
@@ -301,7 +362,7 @@ handleReply(string command, string reply)
         llOwnerSay(botLabel() + " could not do " + cmd + ": " + why);
         return;
     }
-    if (cmd == "CompanionJoin" || cmd == "CompanionCome" || cmd == "CompanionSit" || cmd == "CompanionWear" || cmd == "CompanionAdjust" || cmd == "CompanionFollow") return;   // "started" - the real result follows
+    if (cmd == "CompanionJoin" || cmd == "CompanionCome" || cmd == "CompanionSit" || cmd == "CompanionWear" || cmd == "CompanionAdjust" || cmd == "CompanionFollow" || cmd == "CompanionFly") return;   // "started" - the real result follows
     ui("ring", "");
     if (r == JSON_INVALID) r = reply;
     llOwnerSay(botLabel() + " – " + cmd + ": " + r);
@@ -370,8 +431,11 @@ default
         }
         if (method == "POST")
         {
+            string cmd = formValue(body, "command");
+            if (cmd == "CompanionAddBots") { llHTTPResponse(id, 200, addBots(formValue(body, "reply"))); return; }
+            if (cmd == "CompanionPairing") { llHTTPResponse(id, 200, pairByCode(formValue(body, "reply"))); return; }
             llHTTPResponse(id, 200, "ok");
-            handleReply(formValue(body, "command"), formValue(body, "reply"));
+            handleReply(cmd, formValue(body, "reply"));
             return;
         }
         llHTTPResponse(id, 405, "");
@@ -379,6 +443,17 @@ default
 
     listen(integer ch, string name, key id, string msg)
     {
-        if (ch == PAIR_CHANNEL && llGetSubString(msg, 0, 4) == "pair ") pair(llStringTrim(llGetSubString(msg, 5, -1), STRING_TRIM));
+        if (ch != PAIR_CHANNEL) return;
+        if (llGetSubString(msg, 0, 4) == "pair ") pair(llStringTrim(llGetSubString(msg, 5, -1), STRING_TRIM));
+        else if (llGetSubString(msg, 0, 8) == "pairwith ")
+        {
+            // a pairing invitation from a bot's IM (one-time code): ask that bot for its pairing line
+            list p = llParseString2List(msg, [" "], []);
+            if (llGetSubString(myUrl, 0, 7) != "https://") { llOwnerSay("This HUD has no secure web address here yet – try again in a moment or in another region."); return; }
+            inviteBot = (key)llList2String(p, 1);
+            inviteCode = llList2String(p, 2);
+            llOwnerSay("Asking the bot to pair with this HUD…");
+            llInstantMessage(inviteBot, "slbm-pairwith|" + inviteCode + "|" + myUrl);
+        }
     }
 }

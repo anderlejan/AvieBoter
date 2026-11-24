@@ -1,9 +1,9 @@
 diff --git a/SecondBotEvents/Commands/Companion.cs b/SecondBotEvents/Commands/Companion.cs
 new file mode 100644
-index 0000000..cba6ed8
+index 0000000..6a27f92
 --- /dev/null
 +++ b/SecondBotEvents/Commands/Companion.cs
-@@ -0,0 +1,811 @@
+@@ -0,0 +1,845 @@
 +// AvieBoter patch: commands for a companion / passenger bot driven by an in-world HUD.
 +// Long actions run in the background and report to a reply target (the HUD's HTTP-in URL),
 +// so the IM handler that received the command is never blocked.
@@ -53,6 +53,7 @@ index 0000000..cba6ed8
 +                y = Math.Round(p.Y, 1),
 +                z = Math.Round(p.Z, 1),
 +                sitting = seat != 0,
++                flying = seat == 0 && c.Self.Movement.Fly,
 +                seatId,
 +                seatName,
 +                busy = busy == 1,
@@ -592,9 +593,42 @@ index 0000000..cba6ed8
 +
 +        static double? hover = null;
 +
-+        static double DefaultHover() =>
-+            double.TryParse(Environment.GetEnvironmentVariable("basic_DefaultHoverHeight"), System.Globalization.NumberStyles.Float,
-+                System.Globalization.CultureInfo.InvariantCulture, out double h) ? h : 0.1;
++        [About("Makes the bot fly or land (on, off or toggle); stands up first when it sits")]
++        [ReturnHints("flying / not flying")]
++        [ArgHints("state", "on, off or toggle", "Text", "toggle")]
++        [ArgHints("replyto", "none or the HUD reply address", "SMART")]
++        [CmdTypeDo()]
++        public object CompanionFly(string state, string replyto)
++        {
++            var c = GetClient();
++            bool on = (state ?? "").ToLowerInvariant() switch { "on" => true, "off" => false, _ => !c.Self.Movement.Fly };
++            if (on && c.Self.SittingOn != 0) { c.Self.Stand(); Thread.Sleep(800); }
++            c.Self.Fly(on);
++            string r = on ? "flying" : "not flying";
++            if (!string.IsNullOrEmpty(replyto) && replyto != "none") { Reply(replyto, "CompanionFly", r); return BasicReply("started"); }
++            return BasicReply(r, [state]);
++        }
++
++        static double? hoverDefault = null;    // set live by CompanionSetHover (the app's hover height setting)
++
++        static double DefaultHover() => hoverDefault ??
++            (double.TryParse(Environment.GetEnvironmentVariable("basic_DefaultHoverHeight"), System.Globalization.NumberStyles.Float,
++                System.Globalization.CultureInfo.InvariantCulture, out double h) ? h : 0.0);
++
++        [About("Sets the bot's hover height at once and makes it the height Adjust ▸ Reset goes back to")]
++        [ReturnHints("hover height")]
++        [ArgHints("height", "metres, -2 to 2", "Number", "0")]
++        [CmdTypeDo()]
++        public object CompanionSetHover(string height)
++        {
++            if (!double.TryParse(height, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double h))
++                return Failure("bad height", [height]);
++            h = Math.Clamp(h, -2.0, 2.0);
++            hoverDefault = h;
++            hover = h;
++            GetClient().Self.SetHoverHeight(h);
++            return BasicReply(h.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), [height]);
++        }
 +
 +        [About("Adjusts the bot while it sits: up/down (hover height), forward/back/left/right (sits again a bit moved; only on seats without a fixed sit spot), reset")]
 +        [ReturnHints("result text, sent to the reply target")]
@@ -1388,10 +1422,10 @@ index 0000000..967d3ec
 +}
 diff --git a/SecondBotEvents/Commands/CompanionPeople.cs b/SecondBotEvents/Commands/CompanionPeople.cs
 new file mode 100644
-index 0000000..9515e8e
+index 0000000..45a1e37
 --- /dev/null
 +++ b/SecondBotEvents/Commands/CompanionPeople.cs
-@@ -0,0 +1,468 @@
+@@ -0,0 +1,677 @@
 +// AvieBoter patch: sharing the bot (who may use it with a HUD), a log of who comes and goes, radar, following
 +// and walking (used when a teleport is rerouted to a landing point or refused).
 +using OpenMetaverse;
@@ -1400,6 +1434,7 @@ index 0000000..9515e8e
 +using System.Collections.Concurrent;
 +using System.Collections.Generic;
 +using System.Linq;
++using System.Net.Http;
 +using System.Threading;
 +using System.Threading.Tasks;
 +
@@ -1437,6 +1472,29 @@ index 0000000..9515e8e
 +                if (names.TryGetValue(id, out n)) return n;
 +            }
 +            return "";
++        }
++
++        /// <summary>Avatar key from a name: names seen before, then the people search (waits up to waitMs).</summary>
++        public static UUID Find(GridClient c, string name, int waitMs)
++        {
++            if (UUID.TryParse(name ?? "", out UUID id)) return id;
++            string want = Norm(name);
++            foreach (var kv in names) if (Norm(kv.Value) == want) return kv.Key;
++            var (hid, _, _) = CompanionAccess.FindHud(name);
++            if (hid != UUID.Zero) return hid;
++            if (c == null) return UUID.Zero;
++            UUID q = UUID.Random(), found = UUID.Zero;
++            using var done = new ManualResetEventSlim(false);
++            EventHandler<AvatarPickerReplyEventArgs> h = (s, e) =>
++            {
++                if (e.QueryID != q) return;
++                foreach (var kv in e.Avatars) { names[kv.Key] = kv.Value; if (Norm(kv.Value) == want) found = kv.Key; }
++                done.Set();
++            };
++            c.Avatars.AvatarPickerReply += h;
++            try { c.Avatars.RequestAvatarNameSearch(name.Trim(), q); done.Wait(waitMs); }
++            finally { c.Avatars.AvatarPickerReply -= h; }
++            return found;
 +        }
 +
 +        public static string Norm(string n)
@@ -1499,6 +1557,28 @@ index 0000000..9515e8e
 +            new((csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(CompanionNames.Norm).Where(n => n != ""));
 +
 +        public static void Set(string csv) { people = Parse(csv); }
++
++        /// <summary>The last reply address (the HUD's web address) of each person's HUD, with when it was seen.</summary>
++        public static readonly ConcurrentDictionary<UUID, (string url, string name, DateTime seen)> HudUrls = new();
++
++        static void NoteHudUrl(UUID ownerId, string name, string message)
++        {
++            int a = message.IndexOf("#|#"), b = message.IndexOf("@@@");
++            if (a < 0 || b < a) return;
++            string url = message.Substring(a + 3, b - a - 3);
++            if (url.StartsWith("http://") || url.StartsWith("https://")) HudUrls[ownerId] = (url, name, DateTime.Now);
++        }
++
++        public static bool IsPerson(string name) => people.Count == 0 || people.Contains(CompanionNames.Norm(name));
++
++        /// <summary>The known HUD address of an avatar given by name or UUID.</summary>
++        public static (UUID id, string url, double ageSec) FindHud(string avatar)
++        {
++            foreach (var kv in HudUrls)
++                if (kv.Key.ToString() == (avatar ?? "").Trim() || CompanionNames.Norm(kv.Value.name) == CompanionNames.Norm(avatar ?? ""))
++                    return (kv.Key, kv.Value.url, (DateTime.Now - kv.Value.seen).TotalSeconds);
++            return (UUID.Zero, "", -1);
++        }
 +        public static int Count => people.Count;
 +
 +        /// <summary>Called for every instant message from an object; ownerId = the object's owner.</summary>
@@ -1519,10 +1599,55 @@ index 0000000..9515e8e
 +            }
 +            LastCaller = ownerId;
 +            LastCallerName = name;
++            NoteHudUrl(ownerId, name, message);
 +            if (!lastUse.TryGetValue(ownerId, out DateTime last) || DateTime.Now - last > TimeSpan.FromMinutes(10))
 +                CompanionEvents.Add("use", ownerId, name, c.Network.CurrentSim?.Name, cmd);
 +            lastUse[ownerId] = DateTime.Now;
 +            return true;
++        }
++    }
++
++    /// <summary>One-time pairing invitations: the bot IMs a person a chat link carrying a code; their HUD then asks the bot
++    /// ("slbm-pairwith|code|url" by object IM), the bot checks the code belongs to the HUD's owner and sends the pairing
++    /// line to the HUD's (https) address. An overheard code is useless to anybody else's HUD; each code works once.</summary>
++    public static class CompanionInvites
++    {
++        static readonly ConcurrentDictionary<string, (UUID avatar, string line, DateTime until)> pending = new();
++        static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(20) };
++
++        public static void Add(string code, UUID avatar, string line, TimeSpan valid) =>
++            pending[code] = (avatar, line, DateTime.Now + valid);
++
++        /// <summary>Called for an object IM starting with slbm-pairwith|; ownerId = the HUD's owner.</summary>
++        public static void Redeem(GridClient c, UUID ownerId, string message)
++        {
++            var p = message.Split('|');
++            if (p.Length < 3) return;
++            string code = p[1], url = string.Join("|", p.Skip(2));
++            string who = CompanionNames.Get(c, ownerId, 3000);
++            if (!pending.TryGetValue(code, out var inv) || inv.until < DateTime.Now || inv.avatar != ownerId)
++            {
++                LogFormater.Warn("[Companion] pairing request from " + (who == "" ? ownerId.ToString() : who) + " with an unknown, used or someone else's code");
++                return;
++            }
++            if (!url.StartsWith("https://"))
++            {
++                LogFormater.Warn("[Companion] pairing request without a secure HUD address - not answered");
++                return;
++            }
++            pending.TryRemove(code, out _);
++            Task.Run(async () =>
++            {
++                try
++                {
++                    var form = new FormUrlEncodedContent(new Dictionary<string, string> { { "command", "CompanionPairing" }, { "reply", inv.line + "\n" + code } });
++                    var r = await http.PostAsync(url, form);
++                    string body = await r.Content.ReadAsStringAsync();
++                    LogFormater.Info("[Companion] pairing sent to the HUD of " + who + ": " + body);
++                    CompanionEvents.Add("hud-paired", ownerId, who, c.Network.CurrentSim?.Name, body);
++                }
++                catch (Exception e) { LogFormater.Warn("[Companion] pairing could not reach the HUD: " + e.Message); }
++            });
 +        }
 +    }
 +
@@ -1679,6 +1804,78 @@ index 0000000..9515e8e
 +            return BasicReply("offered", [avatar]);
 +        }
 +
++        [About("Sends the person whose HUD gave the last command a teleport offer to where the bot is (HUD: Teleport me)")]
++        [ReturnHints("offered")]
++        [CmdTypeDo()]
++        public object CompanionTeleportMe()
++        {
++            UUID id = CompanionAccess.LastCaller;
++            if (id == UUID.Zero) return Failure("nobody to offer a teleport to (use it from a HUD)");
++            var c = GetClient();
++            c.Self.SendTeleportLure(id, "Teleport to " + c.Self.Name + " (" + (c.Network.CurrentSim?.Name ?? "") + ")");
++            LogFormater.Info("[Companion] teleport offer sent to " + CompanionAccess.LastCallerName);
++            return BasicReply("offered");
++        }
++
++        [About("The last web address the HUD of an avatar used with this bot, and how many seconds ago")]
++        [ReturnHints("json {uuid, url, age} or unknown")]
++        [ArgHints("avatar", "avatar name or UUID", "Text")]
++        [CmdTypeGet()]
++        public object CompanionHudAddress(string avatar)
++        {
++            var (id, url, age) = CompanionAccess.FindHud(avatar);
++            if (id == UUID.Zero) return Failure("unknown", [avatar]);
++            return BasicReply(J(new { uuid = id.ToString(), url, age = Math.Round(age) }), [avatar]);
++        }
++
++        static readonly HttpClient hudHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
++
++        [About("Hands a prepared, signed message (base64) to the HUD of an avatar at its last known address and returns the HUD's answer (the app uses it to add bots to a worn HUD)")]
++        [ReturnHints("the HUD's answer")]
++        [ArgHints("avatar", "avatar name or UUID", "Text")]
++        [ArgHints("command", "HUD command, e.g. CompanionAddBots", "Text")]
++        [ArgHints("body64", "the message, base64", "Text")]
++        [CmdTypeDo()]
++        public object CompanionHudDeliver(string avatar, string command, string body64)
++        {
++            var (id, url, _) = CompanionAccess.FindHud(avatar);
++            if (id == UUID.Zero) return Failure("no known HUD address", [avatar, command]);
++            string body;
++            try { body = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(body64 ?? "")); } catch { return Failure("bad base64", [avatar, command]); }
++            if (command == "CompanionAddBots" && !url.StartsWith("https://")) return Failure("the HUD has no secure address (old HUD)", [avatar, command]);
++            try
++            {
++                var form = new FormUrlEncodedContent(new Dictionary<string, string> { { "command", command }, { "reply", body } });
++                var r = hudHttp.PostAsync(url, form).GetAwaiter().GetResult();
++                string answer = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
++                if (!r.IsSuccessStatusCode) return Failure("HUD answered " + (int)r.StatusCode, [avatar, command]);
++                return BasicReply(answer, [avatar, command]);
++            }
++            catch (Exception e) { return Failure("HUD not reached: " + e.Message, [avatar, command]); }
++        }
++
++        [About("Invites an avatar to add this bot to the HUD they wear: sends them an IM with a one-click link carrying a one-time code")]
++        [ReturnHints("sent")]
++        [ArgHints("avatar", "avatar name or UUID", "Text")]
++        [ArgHints("code", "one-time code made by the app", "Text")]
++        [ArgHints("line64", "this bot's pairing line, base64", "Text")]
++        [CmdTypeDo()]
++        public object CompanionInvite(string avatar, string code, string line64)
++        {
++            if (string.IsNullOrEmpty(code) || code.Length < 8 || code.Contains('|') || code.Contains(' ')) return Failure("bad code", [avatar]);
++            string line;
++            try { line = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(line64 ?? "")); } catch { return Failure("bad base64", [avatar]); }
++            var c = GetClient();
++            UUID id = CompanionNames.Find(c, avatar, 10000);
++            if (id == UUID.Zero) return Failure("avatar not found", [avatar]);
++            CompanionInvites.Add(code, id, line, TimeSpan.FromDays(7));
++            string link = "secondlife:///app/chat/7/pairwith%20" + c.Self.AgentID + "%20" + code;
++            c.Self.InstantMessage(id, "Add me (" + c.Self.Name + ") to your AvieBoter HUD: wear the HUD, then click " + link
++                + "  - the link works once, for 7 days.");
++            LogFormater.Info("[Companion] invited " + avatar + " to add the bot to their HUD");
++            return BasicReply("sent", [avatar]);
++        }
++
 +        // ---------- walking ----------
 +        /// <summary>Walks (or flies, for height differences) to a point in the bot's region with the server's
 +        /// autopilot. Returns true when the bot got within 'near' metres.</summary>
@@ -1718,6 +1915,35 @@ index 0000000..9515e8e
 +        static Vector3 lastGoal = Vector3.Zero;
 +        static int tpBusy = 0;
 +        static bool walking = false;
++        // stuck detection: the server's autopilot gives up silently when walls are in the way
++        static Vector3 movedFrom = Vector3.Zero;
++        static DateTime movedAt = DateTime.MinValue, issuedAt = DateTime.MinValue;
++        // teleports that did not bring the bot near: after two, it asks the target for a teleport offer (like Come to me)
++        static int tpTries = 0;
++        static DateTime askedAt = DateTime.MinValue, offerWaitUntil = DateTime.MinValue;
++
++        /// <summary>Teleports towards the target, or - after two teleports that did not help - asks the target for a
++        /// teleport offer once and waits 90 s for it (offers from the bot's people are accepted automatically).</summary>
++        static void TeleportOrAsk(GridClient c, ulong handle, Vector3 land, string why)
++        {
++            var now = DateTime.Now;
++            if (now < offerWaitUntil) return;                       // waiting for the offer
++            if (tpTries >= 2)
++            {
++                if (now - askedAt < TimeSpan.FromMinutes(2)) return;
++                askedAt = now;
++                offerWaitUntil = now + TimeSpan.FromSeconds(90);
++                tpTries = 0;
++                LogFormater.Info("[Companion] follow: teleports did not bring me to " + followName + " (" + why + ") - asking for a teleport offer");
++                c.Self.SendTeleportLureRequest(followId, "I am following you but cannot get to you by myself. Please offer me a teleport - I accept it.");
++                return;
++            }
++            tpTries++;
++            lastTp = now; movedAt = now;
++            walking = false;
++            tpBusy = 1;
++            Task.Run(() => { try { c.Self.Teleport(handle, land); } catch { } finally { tpBusy = 0; } });
++        }
 +
 +        public static string FollowInfo => followId == UUID.Zero ? "" : followName;
 +
@@ -1767,6 +1993,9 @@ index 0000000..9515e8e
 +            followName = CompanionNames.Get(c, id, 3000);
 +            if (followName == "") followName = id.ToString();
 +            lostSince = DateTime.MinValue;
++            walking = false;                       // start afresh (a stuck walk from before must not block it)
++            tpTries = 0; offerWaitUntil = DateTime.MinValue;
++            movedAt = DateTime.Now; movedFrom = c.Self.SimPosition;
 +            if (c.Self.SittingOn != 0) { c.Self.Stand(); Thread.Sleep(800); }
 +            followTimer ??= new Timer(_ => FollowTick(), null, Timeout.Infinite, Timeout.Infinite);
 +            followTimer.Change(200, 1000);
@@ -1806,20 +2035,34 @@ index 0000000..9515e8e
 +                var gMe = CompanionRadarData.Global(sim.Handle, c.Self.SimPosition);
 +                double d2 = Math.Sqrt(Math.Pow(gGoal.X - gMe.X, 2) + Math.Pow(gGoal.Y - gMe.Y, 2));
 +                double dz = goal.Z - c.Self.SimPosition.Z;
++                if (t.Handle == sim.Handle && d2 <= 10) { tpTries = 0; offerWaitUntil = DateTime.MinValue; }   // near again
 +                if (t.Handle != sim.Handle || d2 > 40 || (t.Precise && Math.Abs(dz) > 30))
 +                {
 +                    if (DateTime.Now - lastTp < TimeSpan.FromSeconds(15)) return;
-+                    lastTp = DateTime.Now;
-+                    tpBusy = 1;
-+                    walking = false;
 +                    Vector3 land = new(Math.Clamp(goal.X, 1f, 255f), Math.Clamp(goal.Y, 1f, 255f), t.Precise ? goal.Z : t.Pos.Z);
-+                    Task.Run(() => { try { c.Self.Teleport(t.Handle, land); } catch { } finally { tpBusy = 0; } });
++                    TeleportOrAsk(c, t.Handle, land, t.Handle != sim.Handle ? "other region" : d2.ToString("0") + " m away");
 +                    return;
 +                }
 +                if (d2 > 1.2 || (t.Precise && Math.Abs(dz) > 2.5))
 +                {
-+                    if (!walking || Vector3.Distance(goal, lastGoal) > 0.7f)
++                    var now = DateTime.Now;
++                    if (!walking || Vector3.Distance(c.Self.SimPosition, movedFrom) > 0.5f) { movedFrom = c.Self.SimPosition; movedAt = now; }
++                    // not moved for 8 s while still more than 3 m away: blocked - teleport next to the target
++                    if (walking && now - movedAt > TimeSpan.FromSeconds(8) && d2 > 3 && now - lastTp > TimeSpan.FromSeconds(15))
 +                    {
++                        if (now >= offerWaitUntil && tpTries < 2)
++                            LogFormater.Info("[Companion] follow: blocked " + d2.ToString("0.#") + " m from " + followName + " - teleporting next to them");
++                        c.Self.AutoPilotCancel();
++                        walking = false;
++                        movedAt = now;
++                        Vector3 near = new(Math.Clamp(goal.X, 1f, 255f), Math.Clamp(goal.Y, 1f, 255f), t.Precise ? goal.Z : t.Pos.Z);
++                        TeleportOrAsk(c, t.Handle, near, "blocked " + d2.ToString("0") + " m away");
++                        return;
++                    }
++                    // walk again when the goal moved, or every 5 s while not moving (the autopilot may have stopped)
++                    if (!walking || Vector3.Distance(goal, lastGoal) > 0.7f || (now - movedAt > TimeSpan.FromSeconds(3) && now - issuedAt > TimeSpan.FromSeconds(5)))
++                    {
++                        issuedAt = now;
 +                        bool fly = t.Precise && Math.Abs(dz) > 2.5;
 +                        c.Self.Fly(fly);
 +                        c.Self.AutoPilot(gGoal.X, gGoal.Y, t.Precise ? goal.Z : c.Self.SimPosition.Z);
@@ -1977,19 +2220,34 @@ index c0be957..acd252d 100644
              client.Network.LoggedOut += BotLoggedOut;
              client.Network.Disconnected += BotDisconnected;
 diff --git a/SecondBotEvents/Services/CommandsService.cs b/SecondBotEvents/Services/CommandsService.cs
-index a9d77f9..59bf49d 100644
+index a9d77f9..d1ae2a2 100644
 --- a/SecondBotEvents/Services/CommandsService.cs
 +++ b/SecondBotEvents/Services/CommandsService.cs
-@@ -141,7 +141,8 @@ namespace SecondBotEvents.Services
+@@ -141,7 +141,14 @@ namespace SecondBotEvents.Services
              {
                  case InstantMessageDialog.MessageFromObject:
                      {
 -                        acceptMessage = true;
++                        // AvieBoter: a HUD answering a pairing invitation (one-time code, checked against the HUD's owner)
++                        if ((e.IM.Message ?? "").StartsWith("slbm-pairwith|"))
++                        {
++                            SecondBotEvents.Commands.CompanionInvites.Redeem(GetClient(), e.IM.FromAgentID, e.IM.Message);
++                            return;
++                        }
 +                        // AvieBoter: a signed HUD command counts only when the HUD's owner is one of the bot's people
 +                        acceptMessage = SecondBotEvents.Commands.CompanionAccess.ObjectOwnerAllowed(GetClient(), e.IM.FromAgentID, e.IM.Message);
                          if(myConfig.GetObjectMasterOptout() == true)
                          {
                              string ownername = master.DataStoreService.GetAvatarName(e.IM.FromAgentID);
+@@ -231,7 +238,7 @@ namespace SecondBotEvents.Services
+             string mode = "CHAT";
+             UUID target_avatar = UUID.Zero;
+             int target_channel = 0;
+-            if (target.StartsWith("http://"))
++            if (target.StartsWith("http://") || target.StartsWith("https://"))   // AvieBoter: HUDs use secure addresses (1.1+)
+             {
+                 mode = "HTTP";
+             }
 diff --git a/SecondBotEvents/Services/HttpService.cs b/SecondBotEvents/Services/HttpService.cs
 index 60b291a..c38602b 100644
 --- a/SecondBotEvents/Services/HttpService.cs

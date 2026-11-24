@@ -31,6 +31,8 @@ public class App : Application
         Log.Info("Start " + typeof(App).Assembly.GetName().Version);
         if (AppPaths.Migration == "moved") Log.Info("Data moved from the former name (SL Bot Manager) to " + AppPaths.DataDir);
         else if (AppPaths.Migration != "") Log.Info("Could not move the data of the former name, using it in place: " + AppPaths.Migration);
+        try { HudScripts.Prepare(); Log.Info("HUD scripts in use: " + HudScripts.InUse + " (" + HudScripts.InUseFrom + ")"); }
+        catch (Exception x) { Log.Error("HUD scripts", x); }
         Bots.Load();
         tray = new Tray(this);
         main = new MainWindow(this);
@@ -97,6 +99,7 @@ public class App : Application
         {
             UpdateFound = await Updater.CheckAsync();
             s.LastUpdateCheck = DateTime.Now;
+            await CheckHud();
             UpdateStatus = "";
             if (UpdateFound is { } f && s.NotifiedVersion != f.Version.ToString() && !(s.InstallUpdatesAutomatically && !AnyBotOnline))
             {
@@ -141,8 +144,20 @@ public class App : Application
         }
     }
 
+    /// <summary>A newer HUD from GitHub (between app releases); never fails the app's own update check.</summary>
+    public async Task CheckHud()
+    {
+        try
+        {
+            var v = await HudScripts.CheckAsync();
+            if (v != null) tray?.ShowPopup("New HUD " + v, "The bots now hand out HUD " + v + ". Worn HUDs update themselves the next time they talk to a bot in the same region.", "");
+        }
+        catch (Exception e) { Log.Info("HUD check: " + e.Message); }
+    }
+
     public JsonObject UpdateJson() => new()
     {
+        ["hud"] = HudScripts.InUse + (HudScripts.InUseFrom == "GitHub" ? " (from GitHub)" : ""),
         ["current"] = Updater.Current.ToString(),
         ["check"] = Settings.Data.CheckForUpdates,
         ["auto"] = Settings.Data.InstallUpdatesAutomatically,

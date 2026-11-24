@@ -534,6 +534,46 @@
  },
  {
   "module": "Companion",
+  "name": "CompanionFly",
+  "type": "Do",
+  "about": "Makes the bot fly or land (on, off or toggle); stands up first when it sits",
+  "params": [
+   "state",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "state",
+    "on, off or toggle",
+    "Text",
+    "toggle"
+   ],
+   [
+    "replyto",
+    "none or the HUD reply address",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionSetHover",
+  "type": "Do",
+  "about": "Sets the bot's hover height at once and makes it the height Adjust \u25b8 Reset goes back to",
+  "params": [
+   "height"
+  ],
+  "argHints": [
+   [
+    "height",
+    "metres, -2 to 2",
+    "Number",
+    "0"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
   "name": "CompanionAdjust",
   "type": "Do",
   "about": "Adjusts the bot while it sits: up/down (hover height), forward/back/left/right (sits again a bit moved; only on seats without a fixed sit spot), reset",
@@ -905,6 +945,86 @@
     "avatar",
     "avatar UUID",
     "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionTeleportMe",
+  "type": "Do",
+  "about": "Sends the person whose HUD gave the last command a teleport offer to where the bot is (HUD: Teleport me)",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionHudAddress",
+  "type": "Get",
+  "about": "The last web address the HUD of an avatar used with this bot, and how many seconds ago",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "avatar name or UUID",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionHudDeliver",
+  "type": "Do",
+  "about": "Hands a prepared, signed message (base64) to the HUD of an avatar at its last known address and returns the HUD's answer (the app uses it to add bots to a worn HUD)",
+  "params": [
+   "avatar",
+   "command",
+   "body64"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "avatar name or UUID",
+    "Text"
+   ],
+   [
+    "command",
+    "HUD command, e.g. CompanionAddBots",
+    "Text"
+   ],
+   [
+    "body64",
+    "the message, base64",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionInvite",
+  "type": "Do",
+  "about": "Invites an avatar to add this bot to the HUD they wear: sends them an IM with a one-click link carrying a one-time code",
+  "params": [
+   "avatar",
+   "code",
+   "line64"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "avatar name or UUID",
+    "Text"
+   ],
+   [
+    "code",
+    "one-time code made by the app",
+    "Text"
+   ],
+   [
+    "line64",
+    "this bot's pairing line, base64",
+    "Text"
    ]
   ]
  },

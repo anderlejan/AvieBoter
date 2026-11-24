@@ -16,14 +16,17 @@ a viewer and almost no CPU.
 - **Bots in the tray:** add bot avatars, start and stop them, see where they are, what they sit on and what they use
   on this PC. Passwords are stored encrypted for your Windows user (DPAPI) and passed only to the bot process.
 - **A HUD in Second Life:** the bot builds a HUD, gives it to you already paired, and keeps it up to date. From its
-  menu the bot comes to you, sits with you on a vehicle, follows you, sits on saved seats, goes home and more – from
-  anywhere, with no ports opened on your PC.
+  menu the bot comes to you, sits with you on a vehicle, follows you, sends you a teleport offer, takes off or lands,
+  sits on saved seats, goes home and more – from anywhere, with no ports opened on your PC. One HUD can control
+  several bots; Update HUD adds them to the HUD you already wear.
 - **Sharing:** friends you add to a bot get their own HUD and can use the bot at the same time.
 - **Chat and IMs** of the bot in the app, with Windows popups and sounds.
 - **Radar** of the avatars around the bot, with arrivals and departures saved to daily files for other tools.
 - **Commands:** everything SecondBot can do, with a form for each command.
 - **Updates:** once a day AvieBoter looks for a newer release here and installs it by itself while no bot is
-  online (it checks the file's SHA-256 first). Your bots and settings stay. Settings → Updates switches it off.
+  online (it checks the file's SHA-256 first). Your bots and settings stay. A newer HUD can also come on its own
+  (`hud/hud.json` names its version, the oldest app it needs and the scripts' SHA-256); the bots hand it out and worn
+  HUDs update themselves. Settings → Updates switches both off.
 
 ## Screenshots
 **The HUD in Second Life** (illustration drawn from the HUD's script; names are fictional)
@@ -86,7 +89,8 @@ overwrites an installer: bump `<Version>` in `manager/AvieBoter.csproj` for ever
 
 ### Data
 Everything AvieBoter keeps is in `%LOCALAPPDATA%\AvieBoter`: settings, the bot list with encrypted passwords, chats,
-logs, and per bot `events\events-YYYY-MM-DD.jsonl` (one JSON object per line: `t` (Unix ms), `type` (arrive, leave,
+logs, and per bot – only when "Save comings and goings to files" is switched on in its Radar (off by default) –
+`events\events-YYYY-MM-DD.jsonl` (one JSON object per line: `t` (Unix ms), `type` (arrive, leave,
 hud, hud-off, use, refused, follow, follow-lost, region), `uuid`, `name`, `region`, `extra`, `bot`). Updates and
 uninstalling leave it alone.
 
