@@ -1,4 +1,4 @@
-// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.1.2 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
+// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.1.3 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
 // YOU wear this HUD (on your own avatar, not on the bot). It controls the bot avatar that runs in AvieBoter.
 // Easiest: in AvieBoter, tab "HUD", press "Send me a new HUD" - the bot builds it, paired, and gives it to you.
 // A HUD made that way updates itself when the app has a newer one (its ring prim holds the updater).
@@ -6,7 +6,7 @@
 // then paste the pairing line from AvieBoter into local chat:  /7 pair SLB1|<bot key>|<secret>|<bot name>
 // Commands go to the bot as signed instant messages; answers come back to this HUD's own web address.
 
-string  VERSION = "1.1.2";
+string  VERSION = "1.1.3";
 integer PAIR_CHANNEL = 7;
 integer UPDATE_PIN = 7710422;     // must match the updater script
 integer helloSent = FALSE;
@@ -155,7 +155,13 @@ doAction(string a, list p)
     else if (a == "stand") { send("Stand", []); showText("standing"); ui("pose", "0"); }
     else if (a == "status") send("CompanionStatus", []);
     else if (a == "quietstatus") { quietStatus = TRUE; send("CompanionStatus", []); }
-    else if (a == "fly") { llOwnerSay(botLabel() + (llList2String(p, 0) == "on" ? " takes off…" : " lands…")); send("CompanionFly", [llList2String(p, 0), replyTarget()]); }
+    else if (a == "fly")
+    {
+        string w = " lands…";      // LSL has no ?: operator
+        if (llList2String(p, 0) == "on") w = " takes off…";
+        llOwnerSay(botLabel() + w);
+        send("CompanionFly", [llList2String(p, 0), replyTarget()]);
+    }
     else if (a == "lure") { llOwnerSay(botLabel() + " is sending you a teleport offer…"); send("CompanionTeleportMe", []); }
     else if (a == "gohome") { llOwnerSay(botLabel() + " is teleporting to its home location."); send("GoHome", []); showText("going home"); }
     else if (a == "logoff") { llOwnerSay("Logging " + botLabel() + " out."); showText("logging out"); send("Logoff", []); }

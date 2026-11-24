@@ -1,8 +1,8 @@
 {
- "version": "1.1.2",
+ "version": "1.1.3",
  "minApp": "1.1.1",
  "files": {
-  "AvieBoterHUD.lsl": "ee08c686f798c3160b67039a7db488a42094e1b68317008e9168a38b547c3310",
+  "AvieBoterHUD.lsl": "00b384065b631778c0ced8cc00660c787e91c6b1d087a628d3d9d43bd9099f9e",
   "AvieBoterHUDMenu.lsl": "6dc87b3016ab2fcf53406b0ccfc04c5c0fa34c8eec6717c8a8e53a4879cc6de9",
   "AvieBoterHUDUpdater.lsl": "d2d31a00ab6f0e4801bc500fd14d886c0ca60c4b533c8b422407590300832244"
  }
