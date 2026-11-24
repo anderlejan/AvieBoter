@@ -14,6 +14,8 @@ string  line2 = "";
 string  pendingAction = "";
 integer following = FALSE;
 float   adjustStep = 0.05;           // metres per Adjust press
+float   hoverStep = 0.02;            // metres per Hover press
+string  hoverNow = "";               // the last height the bot reported
 list    ACCENTS = ["Cyan", <0.25, 0.85, 1.0>, "Violet", <0.65, 0.45, 1.0>, "Green", <0.35, 1.0, 0.55>, "Amber", <1.0, 0.75, 0.25>,
                    "Pink", <1.0, 0.45, 0.75>, "White", <0.92, 0.95, 1.0>, "Red", <1.0, 0.35, 0.3>, "Blue", <0.3, 0.5, 1.0>];
 
@@ -232,7 +234,17 @@ followMenu()
 
 moreMenu()
 {
-    dialog("more", "\nMore for " + botLabel() + ":\n\nStatus: what the bot is doing and where.", ["◀ Menu", "Set home…", "Log off…", "Status"]);
+    dialog("more", "\nMore for " + botLabel() + ":\n\nHover ▸: lift or lower the bot.   Status: what the bot is doing and where.", ["◀ Menu", "Set home…", "Log off…", "Hover ▸", "Status"]);
+}
+
+hoverMenu()
+{
+    string cm = (string)llRound(hoverStep * 100.0);
+    string now = hoverNow;
+    if (now == "") now = "not reported yet – press Up or Down";
+    dialog("hover", "\nHover height of " + botLabel() + " – step " + cm + " cm.\nNow: " + now + "\n\nUp / Down lift or lower the bot, standing or sitting. Reset goes back to the height set in AvieBoter, which is also where the bot starts after logging in again.",
+        ["◀ More", "Reset", "Step " + cm + " cm",
+         "Down ▼", "Up ▲"]);
 }
 
 settingsMenu()
@@ -261,6 +273,7 @@ help()
         + "• Follow ▸ – the bot follows you; Closer/Farther and Behind/Left/Right/In front set its place (remembered).\n"
         + "• Outfit… – type a folder name; the bot wears it instead of its outfit.   • More ▸ – Set home, Log off, Status.\n"
         + "• Teleport me – the bot sends you a teleport offer to where it is.   • Go home – the bot teleports home.\n"
+        + "• More ▸ Hover ▸ – lift or lower the bot in steps (Reset = the height set in AvieBoter).\n"
         + "• Stand / Fly ON / Fly OFF – one button that follows the bot: Stand while it sits, else it takes off or lands.\n"
         + "• Settings ▸ – Smaller/Bigger (or stretch the HUD in Edit), ring colour, floating text on/off, Unpair.\n"
         + "• The ring: your colour = ready, amber = working, red = failed.\n"
@@ -293,6 +306,7 @@ default
         else if (str == "slbm-ui|text") { line2 = (string)id; showText(); }
         else if (str == "slbm-ui|status") lastStatus = (string)id;
         else if (str == "slbm-ui|pose") pose = (integer)((string)id);
+        else if (str == "slbm-ui|hover") { hoverNow = (string)id; if (menu == "hover") hoverMenu(); }   // show the new height
     }
 
     touch_start(integer n)
@@ -334,6 +348,22 @@ default
                     return;
                 }
             }
+            return;
+        }
+        if (menu == "hover")
+        {
+            if (msg == "◀ More") { moreMenu(); return; }
+            if (llGetSubString(msg, 0, 4) == "Step ")
+            {
+                list steps = [0.01, 0.02, 0.05, 0.10];
+                integer i = llListFindList(steps, [hoverStep]) + 1;
+                if (i >= llGetListLength(steps)) i = 0;
+                hoverStep = llList2Float(steps, i);
+            }
+            else if (msg == "Up ▲") act("adjust", ["up", (string)hoverStep]);
+            else if (msg == "Down ▼") act("adjust", ["down", (string)hoverStep]);
+            else if (msg == "Reset") act("adjust", ["reset", (string)hoverStep]);
+            hoverMenu();
             return;
         }
         if (menu == "adjust")
@@ -378,6 +408,8 @@ default
         if (menu == "more")
         {
             if (msg == "◀ Menu") { mainMenu(); return; }
+            if (msg == "Hover ▸") { hoverMenu(); return; }
+            if (msg == "Status") { act("status", []); return; }
             if (msg == "Log off…") confirm("logoff", "Log " + botLabel() + " out of Second Life?");
             else if (msg == "Set home…") confirm("sethome", "Make the place where " + botLabel() + " stands now its home?\n(Second Life allows this only on land where the bot may set home.)");
             return;

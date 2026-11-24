@@ -1,4 +1,4 @@
-// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.1.1 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
+// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.1.2 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
 // YOU wear this HUD (on your own avatar, not on the bot). It controls the bot avatar that runs in AvieBoter.
 // Easiest: in AvieBoter, tab "HUD", press "Send me a new HUD" - the bot builds it, paired, and gives it to you.
 // A HUD made that way updates itself when the app has a newer one (its ring prim holds the updater).
@@ -6,7 +6,7 @@
 // then paste the pairing line from AvieBoter into local chat:  /7 pair SLB1|<bot key>|<secret>|<bot name>
 // Commands go to the bot as signed instant messages; answers come back to this HUD's own web address.
 
-string  VERSION = "1.1.1";
+string  VERSION = "1.1.2";
 integer PAIR_CHANNEL = 7;
 integer UPDATE_PIN = 7710422;     // must match the updater script
 integer helloSent = FALSE;
@@ -333,6 +333,8 @@ handleReply(string command, string reply)
     if (result != JSON_INVALID)
     {
         setStatus(describeStatus(llJsonGetValue(reply, ["status"])));
+        if (cmd == "CompanionAdjust" && llGetSubString(result, 0, 6) == "height ") ui("hover", llGetSubString(result, 7, -1));
+        else if (cmd == "CompanionAdjust" && llSubStringIndex(result, "reset") != -1) ui("hover", "as set in AvieBoter");
         if (llSubStringIndex(result, "could not") == 0 || llSubStringIndex(result, "teleport failed") == 0
             || llSubStringIndex(result, "not ") == 0 || llSubStringIndex(result, "error") == 0) ui("ring", "error");
         else ui("ring", "");
