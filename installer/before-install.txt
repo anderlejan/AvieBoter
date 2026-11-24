@@ -1,0 +1,12 @@
+AvieBoter – experimental software
+
+AvieBoter runs Second Life and OpenSim avatars ("bots") on this PC with a modified SecondBot, controlled from the app and from an in-world HUD.
+
+Please read before installing:
+
+- This is EXPERIMENTAL software, made as a hobby project. It may have bugs, change without notice or stop working when Second Life changes. Do not use it for anything important, commercial or safety related.
+- It is provided "as is", without any warranty (see the licence on the next page). You use it at your own risk.
+- You are responsible for following the rules of the grid you use, for Second Life its Terms of Service and its policy on scripted agents (bots). Only log in accounts that you own.
+- Your bot passwords are stored on this PC only, encrypted for your Windows user. Nothing is sent anywhere except to the grid you log in to and, once a day, a check for a newer version on GitHub (can be switched off in Settings).
+
+Second Life is a trademark of Linden Research, Inc. AvieBoter is not affiliated with or endorsed by Linden Lab. OpenSim is a project of its own contributors; AvieBoter is not part of it.

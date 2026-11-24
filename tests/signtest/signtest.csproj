@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Checks that commands signed like the app (BotRunner) and the HUD (AvieBoterHUD.lsl) pass SecondBot's own
+       SignedCommand validation, and that wrong, old or changed commands do not. BotSrc = patched upstream folder. -->
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>disable</Nullable><ImplicitUsings>disable</ImplicitUsings></PropertyGroup>
+  <ItemGroup><ProjectReference Include="$(BotSrc)\SecondBotEvents\SecondBotEvents.csproj" /></ItemGroup>
+</Project>

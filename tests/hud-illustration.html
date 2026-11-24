@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<!-- An illustration of the AvieBoter HUD and its menus (drawn from hud/AvieBoterHUDMenu.lsl), for the README.
+     tests/make_screenshots.py renders it to docs/screenshots/hud-*.png. Names are fictional. -->
+<html><head><meta charset="utf-8"><style>
+  body { margin: 0; font: 13px "Segoe UI", "DejaVu Sans", Arial, sans-serif; color: #e8eef6;
+         background: radial-gradient(ellipse at 30% 20%, #6f8fb3 0%, #3b5574 45%, #1f2d40 100%); }
+  .scene { position: relative; width: 1280px; height: 620px; overflow: hidden; }
+  .cap { position: absolute; left: 28px; bottom: 18px; font-size: 12px; opacity: .75; }
+  .hud { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .hud .txt { font: 12px "DejaVu Sans", Arial, sans-serif; color: #d9edff; text-align: center; text-shadow: 0 1px 2px #000;
+              margin-bottom: 6px; white-space: pre; }
+  .orb { position: relative; width: var(--s); height: var(--s); }
+  .ring { position: absolute; inset: 0; border-radius: 50%; border: calc(var(--s) * .075) solid var(--c);
+          box-shadow: 0 0 calc(var(--s) * .18) var(--c), inset 0 0 calc(var(--s) * .12) var(--c); }
+  .ball { position: absolute; inset: 12%; border-radius: 50%;
+          background: radial-gradient(circle at 35% 30%, #9fb8de 0%, #2a4672 18%, #12213d 55%, #070d19 100%);
+          box-shadow: 0 4px 12px rgba(0,0,0,.55); }
+  .lbl { margin-top: 8px; font-size: 12px; opacity: .85; }
+  .dlg { position: absolute; width: 300px; background: rgba(32, 58, 98, .93); border: 1px solid #6d8fc0; border-radius: 4px;
+         box-shadow: 0 6px 24px rgba(0,0,0,.5); padding: 10px 12px 12px; }
+  .dlg .from { font-size: 12px; color: #b9cff0; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .dlg .from i { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #9fb8de, #12213d 60%);
+                 box-shadow: 0 0 0 2px #40c8ff; }
+  .dlg .msg { white-space: pre-wrap; line-height: 1.35; margin-bottom: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+  .grid b { font-weight: 400; text-align: center; padding: 5px 2px; border-radius: 3px; font-size: 12px;
+            background: linear-gradient(#5b7bab, #3f5e8e); border: 1px solid #7f9fd0; }
+  .grid b.empty { visibility: hidden; }
+  .grid + .ign { margin-top: 8px; text-align: right; } .ign span { padding: 4px 14px; border-radius: 3px; background: #2b4168; border: 1px solid #5f7fb0; font-size: 12px; }
+</style></head><body>
+<div class="scene" id="main"></div>
+<div class="scene" id="menus"></div>
+<script>
+// llDialog fills its buttons from the bottom row up, three per row – rows are reversed here to show them as Second Life does
+function dlg(x, y, msg, buttons) {
+  const rows = []; for (let i = 0; i < buttons.length; i += 3) rows.push(buttons.slice(i, i + 3));
+  rows.reverse();
+  const cells = rows.map(r => r.concat(['', '', ''].slice(r.length))).flat();
+  return `<div class="dlg" style="left:${x}px;top:${y}px"><div class="from"><i></i>Example Owner's 'AvieBoter HUD'</div>
+    <div class="msg">${msg}</div><div class="grid">${cells.map(c => `<b class="${c ? '' : 'empty'}">${c}</b>`).join('')}</div>
+    <div class="ign"><span>Ignore</span></div></div>`;
+}
+function hud(x, y, s, c, text, lbl) {
+  return `<div class="hud" style="left:${x}px;top:${y}px">${text ? `<div class="txt">${text}</div>` : ''}
+    <div class="orb" style="--s:${s}px;--c:${c}"><div class="ring"></div><div class="ball"></div></div>${lbl ? `<div class="lbl">${lbl}</div>` : ''}</div>`;
+}
+document.getElementById('main').innerHTML =
+  hud(90, 70, 170, '#40d9ff', 'controls: Passenger\nready', 'Ready (ring colour of your choice)') +
+  hud(130, 360, 90, '#ffbf40', '', 'Busy') +
+  hud(290, 360, 90, '#ff4d4d', '', 'Problem') +
+  hud(450, 360, 90, '#8c99a6', '', 'No bot paired') +
+  hud(320, 120, 110, '#a673ff', 'controls: Passenger', 'Any size') +
+  dlg(820, 40, '\nBot: Passenger\nLast status: sitting on Jeep\n\nWhat should the bot do?',
+    ['Bot ▸', 'More ▸', 'Settings ▸', 'Status', 'Stand', 'Adjust ▸', 'Sit on…', 'Outfit…', 'Go home', 'Sit with me', 'Come to me', 'Follow ▸']) +
+  '<div class="cap">Illustration of the HUD you wear in Second Life and its main menu. Touch the HUD to open the menu.</div>';
+document.getElementById('menus').innerHTML =
+  dlg(40, 40, '\nFollow – Passenger is following you.\nPlace: 2.0 m behind you (remembered).\n\nIt walks after you, flies when you fly, and teleports when you get far away or change region.',
+    ['◀ Menu', 'Stop', 'Follow me', 'Left side', 'Behind', 'Right side', 'Closer', 'In front', 'Farther']) +
+  dlg(470, 40, '\nAdjust Passenger on its seat – step 5 cm.\n\nUp / Down always work. Forward, Backward, Left and Right make the bot sit down again a bit moved.',
+    ['◀ Menu', 'Reset', 'Step 5 cm', 'Left', 'Backward', 'Right', 'Up ▲', 'Forward', 'Down ▼']) +
+  dlg(900, 40, '\nHUD settings\n\nSize: Smaller / Bigger (or stretch the HUD in Edit).\nColour: the ring\'s colour when the bot is ready.\nText: the floating text above the HUD.',
+    ['◀ Menu', 'Help', 'Unpair…', 'Reset look', 'Colour ▸', 'Hide text', 'Smaller', 'Bigger']) +
+  '<div class="cap">Illustration of the Follow, Adjust (when seated) and HUD settings menus.</div>';
+</script></body></html>

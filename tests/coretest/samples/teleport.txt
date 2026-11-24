@@ -1,0 +1,1 @@
+"{\"Key\":true,\"Value\":\"{\\\"command\\\":\\\"TeleportSLURL\\\",\\\"args\\\":[\\\"http://maps.secondlife.com/secondlife/Sandbox%20Bellisseria/115/89/23\\\"],\\\"reply\\\":\\\"True\\\",\\\"status\\\":true}\"}"

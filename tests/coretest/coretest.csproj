@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Checks the manager's storage code (no window needed): settings and bot lists survive save/load, NaN included. -->
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup><Compile Include="..\..\manager\Core\Models.cs;..\..\manager\Core\JsonStore.cs;..\..\manager\Core\Log.cs;..\..\manager\Core\AppPaths.cs;..\..\manager\Core\BotReply.cs" /></ItemGroup>
+  <ItemGroup><None Include="samples\*.txt" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+</Project>

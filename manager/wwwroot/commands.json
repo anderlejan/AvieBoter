@@ -1,0 +1,3895 @@
+[
+ {
+  "module": "Animation",
+  "name": "AddToAllowAnimations",
+  "type": "Set",
+  "about": "Toggles if animation requests from this avatar (used for remote poseballs) are accepted",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to accept requests from",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Animation",
+  "name": "PlayGesture",
+  "type": "Do",
+  "about": "Attempts to play a gesture \\n using the inventory uuid",
+  "params": [
+   "gesture"
+  ],
+  "argHints": [
+   [
+    "gesture",
+    "inventory uuid for the gesture to trigger",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Animation",
+  "name": "PlayGestureDirect",
+  "type": "Do",
+  "about": "Attempts to play a gesture \\n using the real asset uuid not the inventory uuid",
+  "params": [
+   "gesture"
+  ],
+  "argHints": [
+   [
+    "gesture",
+    "asset uuid for the gesture to trigger",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Animation",
+  "name": "ResetAnimations",
+  "type": "Do",
+  "about": "Resets the animation stack for the bot",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Avatars",
+  "name": "NearmeWithDetails",
+  "type": "Get",
+  "about": "an improved version of near me with extra details<br/>NearMeDetails is a object formated as follows<br/><ul><li>id</li><li>name</li><li>x</li><li>y</li><li>z</li><li>range</li></ul>",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Avatars",
+  "name": "GetProfileImage",
+  "type": "Get",
+  "about": "Requests the given avatars profile image",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who are we getting the profile image of",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Avatars",
+  "name": "SetProfileImage",
+  "type": "Set",
+  "about": "Requests the bot updates its profile image",
+  "params": [
+   "texture"
+  ],
+  "argHints": [
+   [
+    "texture",
+    "What texture to use",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Avatars",
+  "name": "GetProfileAbout",
+  "type": "Get",
+  "about": "Requests the given avatars profile about me",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who are we getting the profile about of",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Avatars",
+  "name": "GetDisplayName",
+  "type": "Get",
+  "about": "Requests the given avatars display name",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who are we getting the profile about of",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Avatars",
+  "name": "SetProfileAbout",
+  "type": "Set",
+  "about": "Requests the bot updates its about me",
+  "params": [
+   "abouttext"
+  ],
+  "argHints": [
+   [
+    "abouttext",
+    "text to use in the about me area, length 10 to 300",
+    "Text",
+    "Hello world!"
+   ]
+  ]
+ },
+ {
+  "module": "Avatars",
+  "name": "Nearme",
+  "type": "Get",
+  "about": "returns a list of all known avatars nearby",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Avatars",
+  "name": "Key2Name",
+  "type": "Do",
+  "about": "searchs the AV database if not found triggers a lookup",
+  "params": [
+   "uuid"
+  ],
+  "argHints": [
+   [
+    "uuid",
+    "What uuid are we getting the name for",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Avatars",
+  "name": "Name2Key",
+  "type": "Do",
+  "about": "searchs the AV database if not found triggers a lookup",
+  "params": [
+   "name"
+  ],
+  "argHints": [
+   [
+    "name",
+    "the name to find the uuid for",
+    "Text",
+    "Madpeter Zond"
+   ]
+  ]
+ },
+ {
+  "module": "Chat",
+  "name": "LocalChatHistory",
+  "type": "Get",
+  "about": "fetchs the last localchat messages",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Chat",
+  "name": "Say",
+  "type": "Do",
+  "about": "sends a message to localchat (Normal chat)",
+  "params": [
+   "channel",
+   "message"
+  ],
+  "argHints": [
+   [
+    "channel",
+    "the channel to output on",
+    "Number",
+    "123"
+   ],
+   [
+    "message",
+    "the message to send",
+    "Text",
+    "Hi Mom im on TV"
+   ]
+  ]
+ },
+ {
+  "module": "Chat",
+  "name": "Shout",
+  "type": "Do",
+  "about": "sends a message to localchat (as a Shout)",
+  "params": [
+   "channel",
+   "message"
+  ],
+  "argHints": [
+   [
+    "channel",
+    "the channel to output on",
+    "Number",
+    "123"
+   ],
+   [
+    "message",
+    "the message to send",
+    "Text",
+    "Hi Mom im on TV"
+   ]
+  ]
+ },
+ {
+  "module": "Chat",
+  "name": "Whisper",
+  "type": "Do",
+  "about": "sends a message to localchat (as a Whisper)",
+  "params": [
+   "channel",
+   "message"
+  ],
+  "argHints": [
+   [
+    "channel",
+    "the channel to output on",
+    "Number",
+    "123"
+   ],
+   [
+    "message",
+    "the message to send",
+    "Text",
+    "Hi Mom im on TV"
+   ]
+  ]
+ },
+ {
+  "module": "Chat",
+  "name": "IM",
+  "type": "Do",
+  "about": "sends a im to the selected avatar",
+  "params": [
+   "avatar",
+   "message"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to send the messsage to",
+    "AVATAR"
+   ],
+   [
+    "message",
+    "the message to send",
+    "Text",
+    "Hi there how are you today?"
+   ]
+  ]
+ },
+ {
+  "module": "Chat",
+  "name": "chatwindows",
+  "type": "Get",
+  "about": "gets a full list of all avatar chat windows",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Chat",
+  "name": "listwithunread",
+  "type": "Get",
+  "about": "gets a list of chat windows from avatars with unread messages",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Chat",
+  "name": "haveunreadims",
+  "type": "Get",
+  "about": "gets if there are any unread im messages from avatars at all",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Chat",
+  "name": "getimchat",
+  "type": "Get",
+  "about": "gets the chat from the selected window for avatar",
+  "params": [
+   "avatarid"
+  ],
+  "argHints": [
+   [
+    "window",
+    "avatar UUID you wish to view the chat from",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionStatus",
+  "type": "Get",
+  "about": "Returns the bot's state for the app and the HUD: online, name, uuid, region, position, seat",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Companion",
+  "name": "SitOn",
+  "type": "Do",
+  "about": "Sits on an object and waits for the server to confirm (sends the AgentSit follow-up)",
+  "params": [
+   "target"
+  ],
+  "argHints": [
+   [
+    "target",
+    "the object to sit on",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionCome",
+  "type": "Do",
+  "about": "Teleports next to a place (global region corner + local position) in the background",
+  "params": [
+   "cornerX",
+   "cornerY",
+   "x",
+   "y",
+   "z",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "cornerX",
+    "region corner X in metres (llGetRegionCorner)",
+    "Number"
+   ],
+   [
+    "cornerY",
+    "region corner Y in metres (llGetRegionCorner)",
+    "Number"
+   ],
+   [
+    "x",
+    "local X",
+    "Float"
+   ],
+   [
+    "y",
+    "local Y",
+    "Float"
+   ],
+   [
+    "z",
+    "local Z",
+    "Float"
+   ],
+   [
+    "replyto",
+    "Where to send the result",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionJoin",
+  "type": "Do",
+  "about": "Comes to a place and, if target is an object, sits on it (passenger mode). Runs in the background",
+  "params": [
+   "cornerX",
+   "cornerY",
+   "x",
+   "y",
+   "z",
+   "target",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "cornerX",
+    "region corner X in metres (llGetRegionCorner)",
+    "Number"
+   ],
+   [
+    "cornerY",
+    "region corner Y in metres (llGetRegionCorner)",
+    "Number"
+   ],
+   [
+    "x",
+    "local X",
+    "Float"
+   ],
+   [
+    "y",
+    "local Y",
+    "Float"
+   ],
+   [
+    "z",
+    "local Z",
+    "Float"
+   ],
+   [
+    "target",
+    "object to sit on, or none",
+    "UUID"
+   ],
+   [
+    "replyto",
+    "Where to send the result",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionSit",
+  "type": "Do",
+  "about": "Sits on an object in the background and reports the result to the reply target (used by the HUD)",
+  "params": [
+   "target",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "target",
+    "the object to sit on",
+    "UUID"
+   ],
+   [
+    "replyto",
+    "Where to send the result",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionIM",
+  "type": "Do",
+  "about": "Sends an IM; the avatar can be a key, or a name looked up nearby, among friends or in SL's people search",
+  "params": [
+   "avatar",
+   "message"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "name (First Last / username) or key",
+    "AVATAR"
+   ],
+   [
+    "message",
+    "the message",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionSetHome",
+  "type": "Do",
+  "about": "Sets the bot's home location where it stands now and returns the region's answer",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionOutfits",
+  "type": "Get",
+  "about": "Lists the folders in My Outfits (names to use with CompanionWear)",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionWear",
+  "type": "Do",
+  "about": "Wears a folder by name, replacing the outfit: My Outfits/<name> first, else any folder with that name",
+  "params": [
+   "name",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "name",
+    "folder name (or a path like Clothes/Summer)",
+    "Text"
+   ],
+   [
+    "replyto",
+    "none = answer directly; else where to send the result (HUD)",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionAdjust",
+  "type": "Do",
+  "about": "Adjusts the bot while it sits: up/down (hover height), forward/back/left/right (sits again a bit moved; only on seats without a fixed sit spot), reset",
+  "params": [
+   "direction",
+   "step",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "direction",
+    "up, down, forward, back, left, right or reset",
+    "Text",
+    "up"
+   ],
+   [
+    "step",
+    "step in metres",
+    "Number",
+    "0.05"
+   ],
+   [
+    "replyto",
+    "none = answer directly; else where to send the result (HUD)",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionConferences",
+  "type": "Set",
+  "about": "Switches taking part in conference chats on or off (off = the bot leaves each conference at once)",
+  "params": [
+   "state"
+  ],
+  "argHints": [
+   [
+    "state",
+    "on or off",
+    "Text",
+    "off"
+   ]
+  ]
+ },
+ {
+  "module": "Companion",
+  "name": "CompanionChatSince",
+  "type": "Get",
+  "about": "Returns chat and IMs the bot received after the given number (for the app)",
+  "params": [
+   "after"
+  ],
+  "argHints": [
+   [
+    "after",
+    "last number already read (0 = all kept)",
+    "Number"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionRezBox",
+  "type": "Do",
+  "about": "Rezzes a 0.5 m box in front of the bot, names it and returns its ids",
+  "params": [
+   "name"
+  ],
+  "argHints": [
+   [
+    "name",
+    "name for the new box",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionLink",
+  "type": "Do",
+  "about": "Links objects into one; the FIRST id becomes the root (checked in SL)",
+  "params": [
+   "localIds"
+  ],
+  "argHints": [
+   [
+    "localIds",
+    "local ids separated by commas, root first",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionTaskScript",
+  "type": "Do",
+  "about": "Creates a script from text, compiles it (Mono) and copies it into an object (rezzed or own attachment)",
+  "params": [
+   "localId",
+   "name",
+   "base64",
+   "running"
+  ],
+  "argHints": [
+   [
+    "localId",
+    "local id of the prim",
+    "Number"
+   ],
+   [
+    "name",
+    "script name",
+    "Text"
+   ],
+   [
+    "base64",
+    "script text, UTF-8, base64",
+    "Text"
+   ],
+   [
+    "running",
+    "true or false",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionTaskInventory",
+  "type": "Get",
+  "about": "Lists the contents of an object",
+  "params": [
+   "localId"
+  ],
+  "argHints": [
+   [
+    "localId",
+    "local id of the prim",
+    "Number"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionAttachObject",
+  "type": "Do",
+  "about": "Wears an object the bot owns that is rezzed nearby",
+  "params": [
+   "localId",
+   "point"
+  ],
+  "argHints": [
+   [
+    "localId",
+    "local id of the root prim",
+    "Number"
+   ],
+   [
+    "point",
+    "attachment point name, e.g. Chest or HUDCenter",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionTakeAndGive",
+  "type": "Do",
+  "about": "Takes a rezzed object the bot owns into its inventory and gives it to an avatar",
+  "params": [
+   "localId",
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "localId",
+    "local id of the object",
+    "Number"
+   ],
+   [
+    "avatar",
+    "avatar UUID",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionFullPerm",
+  "type": "Do",
+  "about": "Gives the next owner modify, copy and transfer rights on objects (needed before giving a HUD)",
+  "params": [
+   "localIds"
+  ],
+  "argHints": [
+   [
+    "localIds",
+    "local ids separated by commas (every prim)",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionMyObjects",
+  "type": "Get",
+  "about": "Lists objects the bot owns that are rezzed in this region (not worn) - to find and tidy up leftovers",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionAttachments",
+  "type": "Get",
+  "about": "Lists the prims the bot is wearing (root prims of its attachments)",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionMakeHud",
+  "type": "Do",
+  "about": "Builds a new AvieBoter HUD (main prim + updater prim), gives it to an avatar and prepares the courier for updates",
+  "params": [
+   "avatar",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "who gets the HUD (name or UUID)",
+    "AVATAR"
+   ],
+   [
+    "replyto",
+    "none = answer directly; else where to send the result",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionHudAutoUpdate",
+  "type": "Set",
+  "about": "Switches automatic HUD updates on or off",
+  "params": [
+   "state"
+  ],
+  "argHints": [
+   [
+    "state",
+    "on or off",
+    "Text",
+    "on"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionHudHello",
+  "type": "Do",
+  "about": "The HUD reports its version; the bot updates it when it is older than the app's HUD",
+  "params": [
+   "version",
+   "updater",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "version",
+    "the HUD's version",
+    "Text"
+   ],
+   [
+    "updater",
+    "key of the HUD's updater prim, or none",
+    "Text"
+   ],
+   [
+    "replyto",
+    "the HUD's reply address",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionDebugSince",
+  "type": "Get",
+  "about": "Script errors and debug messages seen nearby (debug channel), after the given number",
+  "params": [
+   "after"
+  ],
+  "argHints": [
+   [
+    "after",
+    "last number already read",
+    "Number"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionRadar",
+  "type": "Get",
+  "about": "Avatars around the bot: its region and the neighbouring regions it is connected to",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionEventsSince",
+  "type": "Get",
+  "about": "Who came and went (radar, HUDs, people using the bot), after the given number",
+  "params": [
+   "after"
+  ],
+  "argHints": [
+   [
+    "after",
+    "last number already read",
+    "Number"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionSetPeople",
+  "type": "Set",
+  "about": "Sets the people who may use the bot with a HUD (names separated by commas; empty = every paired HUD)",
+  "params": [
+   "names"
+  ],
+  "argHints": [
+   [
+    "names",
+    "names separated by commas",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionHudBye",
+  "type": "Do",
+  "about": "A HUD is taken off (logged as going)",
+  "params": [
+   "version"
+  ],
+  "argHints": [
+   [
+    "version",
+    "the HUD's version",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionOfferTeleport",
+  "type": "Do",
+  "about": "Offers an avatar a teleport to where the bot is",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "avatar UUID",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionFollow",
+  "type": "Do",
+  "about": "Follows an avatar at a distance and angle (180 = behind, 90 = its left, 270 = its right, 0 = in front); target stop ends it",
+  "params": [
+   "target",
+   "distance",
+   "angle",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "target",
+    "avatar UUID, me (who sent the HUD command) or stop",
+    "Text",
+    "me"
+   ],
+   [
+    "distance",
+    "metres",
+    "Number",
+    "2"
+   ],
+   [
+    "angle",
+    "degrees around the avatar",
+    "Number",
+    "180"
+   ],
+   [
+    "replyto",
+    "none or the HUD reply address",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionGoTo",
+  "type": "Do",
+  "about": "Goes to an avatar near the bot (walks if close, else teleports, then walks the rest)",
+  "params": [
+   "avatar",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "avatar UUID",
+    "UUID"
+   ],
+   [
+    "replyto",
+    "none or where to send the result",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Core",
+  "name": "Hello",
+  "type": "Get",
+  "about": "Used to check connections",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Dialogs",
+  "name": "DialogRelayAvatarTarget",
+  "type": "Set",
+  "about": "adds a avatar dialog relay target [or removes if it exists]",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to send the dialog relay to",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Dialogs",
+  "name": "DialogRelayChatTarget",
+  "type": "Set",
+  "about": "adds a chat dialog relay target [or removes if it exists]",
+  "params": [
+   "channel"
+  ],
+  "argHints": [
+   [
+    "channel",
+    "what channel number to send the reply to (must be zero or higher)",
+    "Number",
+    "123"
+   ]
+  ]
+ },
+ {
+  "module": "Dialogs",
+  "name": "DialogRelayHttpTarget",
+  "type": "Set",
+  "about": "adds a http dialog relay target [or removes if it exists]",
+  "params": [
+   "url"
+  ],
+  "argHints": [
+   [
+    "url",
+    "the URL to send the replys to",
+    "URL",
+    "http://mycoolsite.com/botdialog.php"
+   ]
+  ]
+ },
+ {
+  "module": "Dialogs",
+  "name": "DialogResponce",
+  "type": "Do",
+  "about": "Makes the bot interact with the dialog [dialogid] with the button [buttontext]",
+  "params": [
+   "dialogid",
+   "buttontext"
+  ],
+  "argHints": [
+   [
+    "dialogid",
+    "The ID for the dialog",
+    "Number",
+    "442"
+   ],
+   [
+    "buttontext",
+    "The button text to push",
+    "Text",
+    "Unlock"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_AddRole",
+  "type": "Set",
+  "about": "Adds a discord server role to the selected member",
+  "params": [
+   "serverid",
+   "roleid",
+   "memberid"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ],
+   [
+    "roleid",
+    "the role id we are giving",
+    "Number",
+    "445442441"
+   ],
+   [
+    "memberid",
+    "who we are giving it to",
+    "Number",
+    "66522144"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_BanMember",
+  "type": "Do",
+  "about": "Adds the selected user to the ban list - Disallows rejoining untill they are removed from the list",
+  "params": [
+   "serverid",
+   "memberid",
+   "why"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ],
+   [
+    "memberid",
+    "who we are giving it to",
+    "Number",
+    "66522144"
+   ],
+   [
+    "why",
+    "why they are being banned",
+    "Text",
+    "Spammer"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_GetMemberRoles",
+  "type": "Get",
+  "about": "Gets the roles assigned to the selected member",
+  "params": [
+   "serverid",
+   "memberid"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ],
+   [
+    "memberid",
+    "who we are giving it to",
+    "Number",
+    "66522144"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_BulkClear_Messages",
+  "type": "Do",
+  "about": "Clears messages on the server sent by the member in the last 13 days, 22hours 59mins",
+  "params": [
+   "serverid",
+   "memberid"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ],
+   [
+    "memberid",
+    "who we are giving it to",
+    "Number",
+    "66522144"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_Dm_Member",
+  "type": "Do",
+  "about": "Sends a message directly to the user [They must be in the server]\\n This command requires the SERVER MEMBERS INTENT found in discord app dev",
+  "params": [
+   "serverid",
+   "memberid",
+   "message"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ],
+   [
+    "memberid",
+    "who we are giving it to",
+    "Number",
+    "66522144"
+   ],
+   [
+    "message",
+    "what we are sending",
+    "Text",
+    "Whats going on"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_MessageChannel",
+  "type": "Do",
+  "about": "Sends a message to the selected channel - Optional TTS usage",
+  "params": [
+   "serverid",
+   "channelid",
+   "tts",
+   "message"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ],
+   [
+    "channelid",
+    "the channel id to apply this action to",
+    "Number",
+    "552121543"
+   ],
+   [
+    "tts",
+    "shoud tts be enabled",
+    "BOOL"
+   ],
+   [
+    "message",
+    "what we are sending",
+    "Text",
+    "Hi everyone in channel"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_MuteMember",
+  "type": "Do",
+  "about": "Sends a message to the selected channel - Optional TTS usage",
+  "params": [
+   "serverid",
+   "memberid",
+   "mode"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ],
+   [
+    "memberid",
+    "who we are giving it to",
+    "Number",
+    "66522144"
+   ],
+   [
+    "mode",
+    "should we mute them",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_Role_GetSettings",
+  "type": "Get",
+  "about": "returns a collection of settings for the given role \\n This command requires Discord full client mode enabled and connected",
+  "params": [
+   "serverid",
+   "roleid"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id",
+    "Number",
+    "1234555123"
+   ],
+   [
+    "roleid",
+    "the role id",
+    "Number",
+    "66522144"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_RoleList",
+  "type": "Get",
+  "about": "Returns a list of roles and their ids in collection \\n This command requires Discord full client mode enabled and connected",
+  "params": [
+   "serverid"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_RoleRemove",
+  "type": "Do",
+  "about": "Remove a role from a server \\n This command requires Discord full client mode enabled and connected",
+  "params": [
+   "serverid",
+   "roleid"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ]
+  ]
+ },
+ {
+  "module": "Discord",
+  "name": "Discord_TextChannels_List",
+  "type": "Get",
+  "about": "Returns a list of text channels in a server",
+  "params": [
+   "serverid"
+  ],
+  "argHints": [
+   [
+    "serverid",
+    "the server id to apply this action to",
+    "Number",
+    "1234555123"
+   ]
+  ]
+ },
+ {
+  "module": "Estate",
+  "name": "SetEstateTerrainRaw",
+  "type": "Do",
+  "about": "Sets the terrain for the current sim from a url",
+  "params": [
+   "urltofile"
+  ],
+  "argHints": [
+   [
+    "urltofile",
+    "the url to the terrain file you wish to upload",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "Estate",
+  "name": "SetEstateCovenant",
+  "type": "Set",
+  "about": "Sets the estate covenant for the current sim",
+  "params": [
+   "inventoryNotecardUUID"
+  ],
+  "argHints": [
+   [
+    "inventoryNotecardUUID",
+    "the UUID of the notecard you wish to set as the estate covenant",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Estate",
+  "name": "GetEstateCovenant",
+  "type": "Get",
+  "about": "Gets the estate covenant for the current sim",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Estate",
+  "name": "SetRegionFlags",
+  "type": "Set",
+  "about": "Legacy command - will be phased out please use SetExtendedRegionInfo",
+  "params": [
+   "setBlockTerraform",
+   "setBlockFly",
+   "setAllowDamage",
+   "setAllowLandResell",
+   "setBlockPushing",
+   "setAllowParcelJoinDivide",
+   "setAgentLimit",
+   "setObjectBonus",
+   "setMature",
+   "setAdult"
+  ],
+  "argHints": []
+ },
+ {
+  "module": "Estate",
+  "name": "AddEstateManager",
+  "type": "Set",
+  "about": "Adds an estate manager to the current sim or all estates you control",
+  "params": [
+   "avatar",
+   "allEstates"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "the avatar you wish to add as an estate manager",
+    "AVATAR"
+   ],
+   [
+    "allEstates",
+    "true to add to all estates you control, false to add to just this sim",
+    "BOOL",
+    "false"
+   ]
+  ]
+ },
+ {
+  "module": "Estate",
+  "name": "RemoveEstateManager",
+  "type": "Set",
+  "about": "Removes an estate manager from the current sim or all estates you control",
+  "params": [
+   "avatar",
+   "allEstates"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "the avatar you wish to remove as an estate manager",
+    "AVATAR"
+   ],
+   [
+    "allEstates",
+    "true to remove from all estates you control, false to remove from just this sim",
+    "BOOL",
+    "false"
+   ]
+  ]
+ },
+ {
+  "module": "Estate",
+  "name": "SimMessage",
+  "type": "Do",
+  "about": "Sends the message to the current sim",
+  "params": [
+   "message"
+  ],
+  "argHints": [
+   [
+    "message",
+    "What the message is",
+    "Text",
+    "Hi everyone I need to restart this sim"
+   ]
+  ]
+ },
+ {
+  "module": "Estate",
+  "name": "GetSimTexture",
+  "type": "Get",
+  "about": "Fetchs the regions map tile",
+  "params": [
+   "regionname"
+  ],
+  "argHints": [
+   [
+    "regionname",
+    "the name of the region we are fetching",
+    "Text",
+    "Lostworld"
+   ]
+  ]
+ },
+ {
+  "module": "Estate",
+  "name": "EstateParcelReclaim",
+  "type": "Do",
+  "about": "Reclaims ownership of the current parcel",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Estate",
+  "name": "GetSimGlobalPos",
+  "type": "Get",
+  "about": "Gets the global location of a sim [region]",
+  "params": [
+   "regionname"
+  ],
+  "argHints": [
+   [
+    "regionname",
+    "the region we want",
+    "Text",
+    "Lostworld"
+   ]
+  ]
+ },
+ {
+  "module": "Estate",
+  "name": "GetEstateBanList",
+  "type": "Get",
+  "about": "Requests the estate banlist",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Estate",
+  "name": "UpdateEstateBanlist",
+  "type": "Set",
+  "about": "Attempts to add/remove the avatar to/from the Estate banlist",
+  "params": [
+   "avatar",
+   "mode",
+   "global"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "avatar you wish to ban",
+    "AVATAR"
+   ],
+   [
+    "mode",
+    "What action would you like to take<br/>Defaults to remove if not given \\\"add\\\"",
+    "Text",
+    "add",
+    "add",
+    "remove"
+   ],
+   [
+    "global",
+    "if true this the ban/unban will be applyed to all estates the bot has access to",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "Friends",
+  "name": "FriendsGetLocation",
+  "type": "Get",
+  "about": "Gets the location of a friend if map access was given \\n also requests a update",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to get the location of",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Friends",
+  "name": "Friendslist",
+  "type": "Get",
+  "about": "Gets the friendslist",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Friends",
+  "name": "FriendFullPerms",
+  "type": "Set",
+  "about": "Updates the friend perms for avatar avatar to State \\n if true grants (Online/Map/Modify) perms",
+  "params": [
+   "avatar",
+   "state"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who we are talking about",
+    "AVATAR"
+   ],
+   [
+    "state",
+    "true: Grant perms, false: Remove perms",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "Friends",
+  "name": "FriendRequest",
+  "type": "Do",
+  "about": "Updates the friend perms for avatar avatar to State \\n if true grants (Online/Map/Modify) perms",
+  "params": [
+   "avatar",
+   "state"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to request/remove from friends list",
+    "AVATAR"
+   ],
+   [
+    "state",
+    "true: Send invite, false: Remove from friendslist",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "Funds",
+  "name": "Balance",
+  "type": "Get",
+  "about": "Requests the current balance and requests the balance to update.",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Funds",
+  "name": "PayAvatar",
+  "type": "Do",
+  "about": "Makes the bot pay a avatar",
+  "params": [
+   "avatar",
+   "amount"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to pay",
+    "AVATAR"
+   ],
+   [
+    "amount",
+    "the amount to pay (from 1 to current balance)",
+    "Number",
+    "442"
+   ]
+  ]
+ },
+ {
+  "module": "Funds",
+  "name": "PayObject",
+  "type": "Do",
+  "about": "Makes the bot pay a object",
+  "params": [
+   "objectuuid",
+   "primname",
+   "amount"
+  ],
+  "argHints": [
+   [
+    "object",
+    "Object to pay",
+    "UUID"
+   ],
+   [
+    "primname",
+    "The name of the prim on the object to pay",
+    "Text",
+    "MyBank"
+   ],
+   [
+    "amount",
+    "the amount to pay (from 1 to current balance)",
+    "Number",
+    "312"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "IsGroupMember",
+  "type": "Get",
+  "about": "Checks if the given UUID is in the given group<br/>Note: if group membership data is more than 60 secs old this will return Updating<br/>Please wait and retry later",
+  "params": [
+   "group",
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "group",
+    "What group to check",
+    "UUID"
+   ],
+   [
+    "avatar",
+    "The avatar in check",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GetGroupMembers",
+  "type": "Get",
+  "about": "Gets membership of a group",
+  "params": [
+   "group"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to get members list from",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupBan",
+  "type": "Do",
+  "about": "Attempts to ban/unban a given avatar from a group",
+  "params": [
+   "group",
+   "avatar",
+   "state"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to apply the ban in",
+    "UUID"
+   ],
+   [
+    "avatar",
+    "the avatar to ban/unban",
+    "AVATAR"
+   ],
+   [
+    "state",
+    "true to ban false to unban",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupEject",
+  "type": "Do",
+  "about": "Eject selected avatar from group",
+  "params": [
+   "group",
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to eject from",
+    "UUID"
+   ],
+   [
+    "avatar",
+    "the avatar to remove from the group",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupAddRole",
+  "type": "Set",
+  "about": "Adds the avatar to the Group with the role \\n if they are not in the group then it invites them at that role",
+  "params": [
+   "group",
+   "avatar",
+   "role"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to give the avatar the new role for",
+    "UUID"
+   ],
+   [
+    "avatar",
+    "the avatar to give the role to",
+    "AVATAR"
+   ],
+   [
+    "role",
+    "the role to give the avatar in the group",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupInvite",
+  "type": "Do",
+  "about": "Invites selected avatar to the group with the selected role",
+  "params": [
+   "group",
+   "avatar",
+   "role"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to invite to",
+    "UUID"
+   ],
+   [
+    "avatar",
+    "the avatar you wish to invite",
+    "AVATAR"
+   ],
+   [
+    "role",
+    "the role to invite them with or \\\"everyone\\\" to give the default role",
+    "UUID",
+    "everyone"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "Groupnotice",
+  "type": "Do",
+  "about": "Sends a group notice (No attachments please use GroupnoticeWithAttachment to attach items!)",
+  "params": [
+   "group",
+   "title",
+   "message"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to send the notice to",
+    "UUID"
+   ],
+   [
+    "title",
+    "The title of the group notice",
+    "Text",
+    "New releases"
+   ],
+   [
+    "message",
+    "The body of the group notice",
+    "Text",
+    "We have 4 new items in store with 5% off for the first hour!"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupActiveTitle",
+  "type": "Do",
+  "about": "Activates the selected title",
+  "params": [
+   "group",
+   "role"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to get the role from",
+    "UUID"
+   ],
+   [
+    "role",
+    "the role to fetch the title from",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupActiveGroup",
+  "type": "Get",
+  "about": "Sets the selected group to the active group",
+  "params": [
+   "group"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to set as active",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupnoticeWithAttachment",
+  "type": "Do",
+  "about": "Sends a group notice with an attachment",
+  "params": [
+   "group",
+   "title",
+   "message",
+   "attachment"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to send the notice to",
+    "UUID"
+   ],
+   [
+    "title",
+    "The title of the group notice",
+    "Text",
+    "Update to terms for rentals"
+   ],
+   [
+    "message",
+    "The body of the group notice",
+    "Text",
+    "Hi everyone there has been a TOS update please check and review"
+   ],
+   [
+    "attachment",
+    "the inventory to send",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GetGroupList",
+  "type": "Get",
+  "about": "fetchs a list of all groups known to the bot",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Group",
+  "name": "ForceLoadGroups",
+  "type": "Do",
+  "about": "Forces the bot to reload the groups list",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Group",
+  "name": "GetGroupRoles",
+  "type": "Get",
+  "about": "Requests the roles for the selected group",
+  "params": [
+   "group"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to get roles from",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupchatListAllUnreadGroups",
+  "type": "Get",
+  "about": "fetchs a list of all groups with unread messages",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Group",
+  "name": "GroupchatGroupHasUnread",
+  "type": "Get",
+  "about": "checks if a given group has any unread messages",
+  "params": [
+   "group"
+  ],
+  "argHints": [
+   [
+    "group",
+    "the group to check if it has any unread messages",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "GroupchatAnyUnread",
+  "type": "Get",
+  "about": "checks if there are any groups with unread messages",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Group",
+  "name": "GroupchatClearAll",
+  "type": "Set",
+  "about": "Clears all group chat buffers at once",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Group",
+  "name": "GroupchatHistory",
+  "type": "Get",
+  "about": "fetchs the groupchat history",
+  "params": [
+   "group"
+  ],
+  "argHints": [
+   [
+    "group",
+    "what group to get the chat history of",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Group",
+  "name": "Groupchat",
+  "type": "Do",
+  "about": "sends a message to the groupchat",
+  "params": [
+   "group",
+   "message"
+  ],
+  "argHints": [
+   [
+    "group",
+    "what group to send a message to",
+    "UUID"
+   ],
+   [
+    "message",
+    "the message to send",
+    "Text",
+    "Hello everyone"
+   ]
+  ]
+ },
+ {
+  "module": "Info",
+  "name": "GetCurrentRegionType",
+  "type": "Get",
+  "about": "Fetchs the current region type the bot is in",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Info",
+  "name": "ListSculptys",
+  "type": "Get",
+  "about": "Lists objects that are sculpty type in the current sim that the bot can see",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Info",
+  "name": "Version",
+  "type": "Get",
+  "about": "Fetchs the current bot",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Info",
+  "name": "Name",
+  "type": "Get",
+  "about": "Fetchs the name of the bot",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Info",
+  "name": "ParcelName",
+  "type": "Get",
+  "about": "Fetchs the current parcels name",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Info",
+  "name": "UnixTimeNow",
+  "type": "Get",
+  "about": "Requests the current unixtime at the bot",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Info",
+  "name": "SimName",
+  "type": "Get",
+  "about": "Fetchs the current region name",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Info",
+  "name": "GetPosition",
+  "type": "Get",
+  "about": "Fetchs the current location of the bot",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Inventory",
+  "name": "UploadMediaWave",
+  "type": "Do",
+  "about": "Uploads a new sound file to inventory",
+  "params": [
+   "sourcePath",
+   "inventoryName"
+  ],
+  "argHints": [
+   [
+    "sourcePath",
+    "accepts a file path to a wave PCM file @ 44100",
+    "FILE"
+   ],
+   [
+    "inventoryName",
+    "the name in secondlife",
+    "Text",
+    "mycoolsound"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "RezObject",
+  "type": "Do",
+  "about": "[BLOCKING] rezs the item at the bots current location",
+  "params": [
+   "item"
+  ],
+  "argHints": [
+   [
+    "item",
+    "What to rez",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "AsyncRezObject",
+  "type": "Do",
+  "about": "rezs the item at the bots current location",
+  "params": [
+   "item",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "item",
+    "What to rez",
+    "UUID"
+   ],
+   [
+    "replyto",
+    "Where to send the reply to",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "RezObjectParcelCenter",
+  "type": "Do",
+  "about": "[BLOCKING] rezs the item at the parcel center",
+  "params": [
+   "item",
+   "zoffset"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what to rez",
+    "UUID"
+   ],
+   [
+    "zoffset",
+    "Z offset to apply (range -2 to 2)",
+    "Number",
+    "0.5"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "AsyncRezObjectParcelCenter",
+  "type": "Do",
+  "about": "rezs the item at the parcel center",
+  "params": [
+   "item",
+   "zoffset",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what to rez",
+    "UUID"
+   ],
+   [
+    "zoffset",
+    "Z offset to apply (range -2 to 2)",
+    "Number",
+    "0.5"
+   ],
+   [
+    "replyto",
+    "Where to send the reply to",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "RezObjectOnPos",
+  "type": "Do",
+  "about": "[BLOCKING] rezs the item at the target location",
+  "params": [
+   "item",
+   "x",
+   "y",
+   "z"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what to rez",
+    "UUID"
+   ],
+   [
+    "x",
+    "X cord to rez at",
+    "Number",
+    "123"
+   ],
+   [
+    "y",
+    "Y cord to rez at",
+    "Number",
+    "45"
+   ],
+   [
+    "z",
+    "Z cord to rez at",
+    "Number",
+    "26"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "AsyncRezObjectOnPos",
+  "type": "Do",
+  "about": "rezs the item at the target location",
+  "params": [
+   "item",
+   "x",
+   "y",
+   "z",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what to rez",
+    "UUID"
+   ],
+   [
+    "x",
+    "X cord to rez at",
+    "Number",
+    "123"
+   ],
+   [
+    "y",
+    "Y cord to rez at",
+    "Number",
+    "45"
+   ],
+   [
+    "z",
+    "Z cord to rez at",
+    "Number",
+    "26"
+   ],
+   [
+    "replyto",
+    "Where to send the reply to",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "RenameInventory",
+  "type": "Set",
+  "about": "renames a folder or inventory item",
+  "params": [
+   "item",
+   "newname"
+  ],
+  "argHints": [
+   [
+    "item",
+    "item/folder to name",
+    "UUID"
+   ],
+   [
+    "newname",
+    "What we are changing it to",
+    "Text",
+    "Better name"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "DeleteInventoryItem",
+  "type": "Set",
+  "about": "Attempts to Remove the given inventory item",
+  "params": [
+   "item"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what item are we Deleting",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "DeleteInventoryFolder",
+  "type": "Set",
+  "about": "Attempts to Remove the given inventory folder",
+  "params": [
+   "folder"
+  ],
+  "argHints": [
+   [
+    "folder",
+    "what folder are we removing",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "Attach",
+  "type": "Do",
+  "about": "Attempts to attach the given inventory item",
+  "params": [
+   "item"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what item are we attaching",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "Detach",
+  "type": "Do",
+  "about": "Attempts to Detach the given inventory item (or attachment point)",
+  "params": [
+   "item"
+  ],
+  "argHints": [
+   [
+    "item",
+    "UUID of item, or the attach point, or * to remove everything",
+    "Text",
+    "Left Hand"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "SwapOutfit",
+  "type": "Do",
+  "about": "Replaces the current avatar outfit with the contents of the given folder",
+  "params": [
+   "folder"
+  ],
+  "argHints": [
+   [
+    "folder",
+    "what folder are we swapping to",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "SwapOutfitByPath",
+  "type": "Do",
+  "about": "Replaces the current avatar outfit with the contents of the given folder",
+  "params": [
+   "folderpath"
+  ],
+  "argHints": [
+   [
+    "folderpath",
+    "what folder are we swapping to",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "Outfit",
+  "type": "Do",
+  "about": "Replaces the current avatar outfit with the My Outfits/[NAME] folder",
+  "params": [
+   "name"
+  ],
+  "argHints": [
+   [
+    "name",
+    "Name of the folder",
+    "Text",
+    "My other outfit"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "InventoryPurgeNotecards",
+  "type": "Do",
+  "about": "Searchs the notecards folder for notecards, any older than 31 days are deleted.<br/>Depending on the number of notecards this might require multiple calls!",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Inventory",
+  "name": "GetRealUUID",
+  "type": "Get",
+  "about": "converts a inventory uuid to a realworld uuid<br/>Needed for texture preview",
+  "params": [
+   "item"
+  ],
+  "argHints": [
+   [
+    "item",
+    "inventory level item",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "SendItemByPath",
+  "type": "Do",
+  "about": "[BLOCKING] sends a item to an avatar via a path",
+  "params": [
+   "path",
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "path",
+    "item path and name",
+    "Text",
+    "Objects/DemoItem"
+   ],
+   [
+    "avatar",
+    "Who we are sending it to",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "AsyncSendItemByPath",
+  "type": "Do",
+  "about": "sends a item to an avatar via a path",
+  "params": [
+   "path",
+   "avatar",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "path",
+    "item path and name",
+    "Text",
+    "Objects/DemoItem"
+   ],
+   [
+    "avatar",
+    "Who we are sending it to",
+    "AVATAR"
+   ],
+   [
+    "replyto",
+    "Where to send the reply to",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "SendItem",
+  "type": "Do",
+  "about": "[BLOCKING] sends a item to an avatar",
+  "params": [
+   "item",
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what are we sending",
+    "UUID"
+   ],
+   [
+    "avatar",
+    "Who are we sending it to",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "AsyncSendItem",
+  "type": "Do",
+  "about": "sends a item to an avatar",
+  "params": [
+   "item",
+   "avatar",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what are we sending",
+    "UUID"
+   ],
+   [
+    "avatar",
+    "Who are we sending it to",
+    "AVATAR"
+   ],
+   [
+    "replyto",
+    "Where to send the reply to",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "SendFolderByPath",
+  "type": "Do",
+  "about": "Sends a folder to an avatar",
+  "params": [
+   "path",
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "path",
+    "path to the folder from root",
+    "Text",
+    "Objects/MyFolderToSend"
+   ],
+   [
+    "avatar",
+    "Who are we sending it to",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "SendFolder",
+  "type": "Do",
+  "about": "Sends a folder to an avatar",
+  "params": [
+   "folder",
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what folder are we sending",
+    "UUID"
+   ],
+   [
+    "avatar",
+    "Who are we sending it to",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "TransferInventoryToObject",
+  "type": "Do",
+  "about": "[BLOCKING] Transfers a item [ARG 2] to a objects inventory [ARG 1] (And if set with the script running state [ARG 3])",
+  "params": [
+   "item",
+   "objectuuid",
+   "running"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what are we sending",
+    "UUID"
+   ],
+   [
+    "object",
+    "were are we sending it",
+    "UUID"
+   ],
+   [
+    "running",
+    "should it be running",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "AsyncTransferInventoryToObject",
+  "type": "Do",
+  "about": "Transfers a item [ARG 2] to a objects inventory [ARG 1] (And if set with the script running state [ARG 3])",
+  "params": [
+   "item",
+   "objectuuid",
+   "running",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "item",
+    "what are we sending",
+    "UUID"
+   ],
+   [
+    "object",
+    "were are we sending it",
+    "UUID"
+   ],
+   [
+    "running",
+    "should it be running",
+    "BOOL"
+   ],
+   [
+    "replyto",
+    "Where to send the reply to",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "InventoryFolders",
+  "type": "Get",
+  "about": "Requests the inventory folder layout as a json object InventoryMapFolder<br/>Formated as follows<br/>InventoryMapItem<br/><ul><li>id: UUID</li><li>name: String</li><li>subfolders: InventoryMapFolder[]</li></ul>",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Inventory",
+  "name": "InventoryFoldersLimited",
+  "type": "Get",
+  "about": "Requests folders limited to selected folder",
+  "params": [
+   "targetfolder"
+  ],
+  "argHints": [
+   [
+    "targetfolder",
+    "the folder to look up",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "InventoryContents",
+  "type": "Get",
+  "about": "[Blocking] Requests the contents of a folder as an array of InventoryMapItem<br/>Can block for upto 45 secs!",
+  "params": [
+   "folderUUID"
+  ],
+  "argHints": [
+   [
+    "folderUUID",
+    "the folder to fetch (Found via: inventory/folders)",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "InventoryPreloadDone",
+  "type": "Get",
+  "about": "Checks if the inventory preload is done",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Inventory",
+  "name": "InventoryPreloadCount",
+  "type": "Get",
+  "about": "Requests the number of folders preloaded",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Inventory",
+  "name": "AsyncInventoryContents",
+  "type": "Get",
+  "about": "Requests the contents of a folder as an array of InventoryMapItem",
+  "params": [
+   "folderUUID",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "folderUUID",
+    "the folder to fetch (Found via: inventory/folders)",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "CreateInventoryFolder",
+  "type": "Set",
+  "about": "creates a folder in a folder",
+  "params": [
+   "parentFolder",
+   "folderName"
+  ],
+  "argHints": [
+   [
+    "parentFolder",
+    "folder to create a subfolder in",
+    "UUID"
+   ],
+   [
+    "folderName",
+    "name of the new folder",
+    "Text",
+    "MyNewFolder"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "MoveInventoryItem",
+  "type": "Do",
+  "about": "moves an item to another folder",
+  "params": [
+   "item",
+   "folder"
+  ],
+  "argHints": [
+   [
+    "item",
+    " item to move",
+    "UUID"
+   ],
+   [
+    "folder",
+    "destination folder",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Inventory",
+  "name": "MoveInventoryFolder",
+  "type": "Do",
+  "about": "moves a folder to another folder",
+  "params": [
+   "sourceFolder",
+   "destFolder"
+  ],
+  "argHints": [
+   [
+    "sourceFolder",
+    "folder to move",
+    "UUID"
+   ],
+   [
+    "destFolder",
+    "destination folder",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "HoverHeight",
+  "type": "Set",
+  "about": "Adjusts Hover height",
+  "params": [
+   "height"
+  ],
+  "argHints": [
+   [
+    "height",
+    "what height to hover at from (-2.0, 2.0)",
+    "Number",
+    "0.5"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "AutoPilot",
+  "type": "Do",
+  "about": "uses the AutoPilot to move to a location",
+  "params": [
+   "x",
+   "y",
+   "z"
+  ],
+  "argHints": [
+   [
+    "x",
+    "X location to AutoPilot to",
+    "Number",
+    "44"
+   ],
+   [
+    "y",
+    "Y location to AutoPilot to",
+    "Number",
+    "78"
+   ],
+   [
+    "z",
+    "Z location to AutoPilot to",
+    "Number",
+    "26"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "AutoPilotStop",
+  "type": "Do",
+  "about": "Stop the auto pilot system from walking",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Movement",
+  "name": "SendTeleportLure",
+  "type": "Do",
+  "about": "Make the bot request the target avatar teleport to the bot",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to send the join me via teleport to",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "RequestTeleport",
+  "type": "Do",
+  "about": "Sends a teleport request (Move the bot to the avatar)",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to request a teleport from",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "Fly",
+  "type": "Set",
+  "about": "Makes the bot fly (or not)",
+  "params": [
+   "mode"
+  ],
+  "argHints": [
+   [
+    "mode",
+    "true: Start flying, false: stop flying (super fun at height)",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "RotateToFaceVector",
+  "type": "Set",
+  "about": "Rotates the bot to face a vector from its current location",
+  "params": [
+   "vector"
+  ],
+  "argHints": [
+   [
+    "vector",
+    "What direction to face",
+    "Vector",
+    "<123,45,44>"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "RotateToFace",
+  "type": "Set",
+  "about": "Rotates the bot to face a avatar",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to turn to look at",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "RotateTo",
+  "type": "Set",
+  "about": "Rotates the avatar to face a rotation from north in Degrees",
+  "params": [
+   "deg"
+  ],
+  "argHints": [
+   [
+    "deg",
+    "0 to 360",
+    "Number",
+    "180"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "Teleport",
+  "type": "Do",
+  "about": "Attempt to teleport to a new region",
+  "params": [
+   "region",
+   "x",
+   "y",
+   "z"
+  ],
+  "argHints": [
+   [
+    "region",
+    "the name of the region we are going to"
+   ],
+   [
+    "x",
+    "X location to teleport to",
+    "Number",
+    "55"
+   ],
+   [
+    "y",
+    "y location to teleport to",
+    "Number",
+    "78"
+   ],
+   [
+    "z",
+    "z location to teleport to",
+    "Number",
+    "244"
+   ]
+  ]
+ },
+ {
+  "module": "Movement",
+  "name": "TeleportSLURL",
+  "type": "Do",
+  "about": "Attempt to teleport to a new region via a SL url",
+  "params": [
+   "slurl"
+  ],
+  "argHints": [
+   [
+    "slurl",
+    "a full SLurl",
+    "Text",
+    "secondlife://Example%20Land/115/130/24"
+   ]
+  ]
+ },
+ {
+  "module": "Notecard",
+  "name": "NotecardRead",
+  "type": "Get",
+  "about": "Reads the notecards content, if it is able to read the notecard will give a json reply of notecarduuid name and contents",
+  "params": [
+   "notecardInventoryUUID",
+   "replytarget"
+  ],
+  "argHints": [
+   [
+    "notecardInventoryUUID",
+    "What notecard to read",
+    "UUID"
+   ],
+   [
+    "replytarget",
+    "Were to send the reply",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "Notecard",
+  "name": "NotecardAdd",
+  "type": "Set",
+  "about": "Adds content to the Collection<br/> Also creates the Collection if it does not exist",
+  "params": [
+   "collection",
+   "content"
+  ],
+  "argHints": [
+   [
+    "collection",
+    "The name of the collection",
+    "Text",
+    "StorageMeme"
+   ],
+   [
+    "content",
+    "The text to add to the collection",
+    "Text",
+    "Add this line \\n Please and thanks"
+   ]
+  ]
+ },
+ {
+  "module": "Notecard",
+  "name": "NotecardClear",
+  "type": "Set",
+  "about": "Clears the contents of a collection",
+  "params": [
+   "collection"
+  ],
+  "argHints": [
+   [
+    "collection",
+    "The name of the collection",
+    "Text",
+    "StorageMeme"
+   ]
+  ]
+ },
+ {
+  "module": "Notecard",
+  "name": "NotecardSend",
+  "type": "Do",
+  "about": "Sends a notecard to a avatar using the text in the prebuilt collection [see NotecardAdd] and also clears the collection just before sending [see NotecardClear]",
+  "params": [
+   "avatar",
+   "collection",
+   "notecardname"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to send it to",
+    "AVATAR"
+   ],
+   [
+    "collection",
+    "The name of the collection",
+    "Text",
+    "StorageMeme"
+   ],
+   [
+    "notecardname",
+    "What to call the created notecard",
+    "Text",
+    "My custom notecard"
+   ]
+  ]
+ },
+ {
+  "module": "Notecard",
+  "name": "NotecardDirectSend",
+  "type": "Do",
+  "about": "Creates and sends a notecard in one command good if you are using HTTP otherwise see [NotecardSend]",
+  "params": [
+   "avatar",
+   "content",
+   "notecardname"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to send the notecard to",
+    "AVATAR"
+   ],
+   [
+    "content",
+    "What to put in the notecard",
+    "Text",
+    "I am in a notecard"
+   ],
+   [
+    "notecardname",
+    "Whats the name of the notecard",
+    "Text",
+    "Custom notecard"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "ResetParcelAcccessLists",
+  "type": "Do",
+  "about": "Resets the current parcels access lists",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetCurrentParcelId",
+  "type": "Get",
+  "about": "Requests the current parcel local id",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetCurrentParcelUUID",
+  "type": "Get",
+  "about": "Requests the current parcel uuid",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "UpdateListOfParcels",
+  "type": "Do",
+  "about": "Requests the bot update its list of parcels ready for other commands",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetParcelListSnapshots",
+  "type": "Get",
+  "about": "Requests a packet blob for the parcels snapshot data",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetCurrentParcelSize",
+  "type": "Get",
+  "about": "Requests the current parcel size",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetSimParcelLayers",
+  "type": "Get",
+  "about": "requests the parcel layout as a SVG\\n call UpdateListOfParcels first to update list before calling",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetListOfParcels",
+  "type": "Get",
+  "about": "Requests a packet blob for the parcels in the current sim\\n call UpdateListOfParcels first to update list before calling",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "CancelParcelSale",
+  "type": "Do",
+  "about": "Cancels the current parcel the bot is in sale",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "SetParcelSale",
+  "type": "Set",
+  "about": "Sets the current parcel for sale Also marks the parcel for sale",
+  "params": [
+   "amount",
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "amount",
+    "The amount to sell the parcel for from 1 to 9999999, can be zero if avatar is assigned.",
+    "Number",
+    "4323"
+   ],
+   [
+    "avatar",
+    "Who to sell the parcel to or \\\"none\\\" to allow anyone",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetParcelTraffic",
+  "type": "Get",
+  "about": "Gets the parcel Dwell (Traffic) value and returns it via the reply target",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetParcelSaleDetails",
+  "type": "Get",
+  "about": "Gets the current parcel sale amount and target for sale and returns it via the reply target",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "QueryLandSaleData",
+  "type": "Get",
+  "about": "Make a request to the landsale directory",
+  "params": [
+   "filterRegion",
+   "filterPrice",
+   "filterArea",
+   "pageNum",
+   "timeout"
+  ],
+  "argHints": [
+   [
+    "filterRegion",
+    "What are we looking for",
+    "Text",
+    "Auction",
+    "Any",
+    "Auction",
+    "Mainland",
+    "Estate"
+   ],
+   [
+    "filterPrice",
+    "the max price to get results for: a number greater than or equal to zero",
+    "Number",
+    "432"
+   ],
+   [
+    "filterArea",
+    "the max area to get results for: a number greater than or equal to zero",
+    "Number",
+    "65"
+   ],
+   [
+    "pageNum",
+    "the page to load from (starting at zero): a number greater than or equal to zero",
+    "Number",
+    "0"
+   ],
+   [
+    "timeout",
+    "how long to wait for results: a number greater in the range 2000 to 7000",
+    "Number",
+    "2000"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "SetParcelLandingZone",
+  "type": "Set",
+  "about": "Changes the parcel landing mode to point and sets the landing point",
+  "params": [
+   "x",
+   "y",
+   "z"
+  ],
+  "argHints": [
+   [
+    "x",
+    "X point for landing",
+    "Number",
+    "129"
+   ],
+   [
+    "y",
+    "Y point for landing",
+    "Number",
+    "32"
+   ],
+   [
+    "z",
+    "Z point for landing",
+    "Number",
+    "11"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "SetParcelName",
+  "type": "Set",
+  "about": "Updates the current parcels name",
+  "params": [
+   "name"
+  ],
+  "argHints": [
+   [
+    "name",
+    "The new name of the parcel",
+    "Text",
+    "My Home"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "SetParcelDesc",
+  "type": "Set",
+  "about": "Updates the current parcels description",
+  "params": [
+   "desc"
+  ],
+  "argHints": [
+   [
+    "desc",
+    "The new desc of the parcel",
+    "Text",
+    "All are invited"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetParcelDesc",
+  "type": "Get",
+  "about": "Fetchs the current parcels desc",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetParcelFlags",
+  "type": "Get",
+  "about": "gets the flags for the parcel",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "ParcelEject",
+  "type": "Do",
+  "about": "Ejects an avatar",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to eject from the parcel",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "AbandonLand",
+  "type": "Do",
+  "about": "Abandons the parcel the bot is currently on, returning it to Linden's or Estate owner",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "ParcelBan",
+  "type": "Do",
+  "about": "Bans an avatar from a parcel",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to ban from the parcel",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "ParcelUnBan",
+  "type": "Do",
+  "about": "Unbans an avatar from a parcel",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to unban from the parcel",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "ReturnAllObjectsOnParcelByOwner",
+  "type": "Do",
+  "about": "Returns all objects on a parcel owned by selected avatar",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "who to return all objects on parcel",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "ReturnAllObjectsOnParcel",
+  "type": "Do",
+  "about": "Returns all objects on a parcel",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetParcelPrimCounts",
+  "type": "Get",
+  "about": "Gets the current parcel prim count data",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "SetParcelAudioControls",
+  "type": "Set",
+  "about": "Controls who can trigger audio on this parcel\\n if everyone is set to true then grouponly will switch to false",
+  "params": [
+   "everyone",
+   "grouponly"
+  ],
+  "argHints": [
+   [
+    "everyone",
+    "can everyone trigger audio on this parcel",
+    "BOOL"
+   ],
+   [
+    "grouponly",
+    "can everyone trigger audio on this parcel",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "SetParcelMusic",
+  "type": "Set",
+  "about": "Updates the current parcels music url",
+  "params": [
+   "musicurl"
+  ],
+  "argHints": [
+   [
+    "musicurl",
+    "the URL to set for streaming audio",
+    "URL",
+    "http://podcast.mysite.com"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "SetParcelFlag",
+  "type": "Set",
+  "about": "Updates a flag setting for a parcel",
+  "params": [
+   "escapedflagdata"
+  ],
+  "argHints": [
+   [
+    "escapedflagdata",
+    "repeatable flag data split by ::: formated Flag=True|False",
+    "Text",
+    ""
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "ParcelDeedToGroup",
+  "type": "Do",
+  "about": "transfers the current parcel ownership to the assigned group",
+  "params": [
+   "group"
+  ],
+  "argHints": [
+   [
+    "group",
+    "The group to deed the land to",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "SetParcelSnapshot",
+  "type": "Set",
+  "about": "Sets the current parcels snapshot",
+  "params": [
+   "texture"
+  ],
+  "argHints": [
+   [
+    "texture",
+    "The texture uuid to set as the snapshot",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "ParcelFreeze",
+  "type": "Do",
+  "about": "Freezes an avatar",
+  "params": [
+   "avatar",
+   "state"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "Who to freeze",
+    "AVATAR"
+   ],
+   [
+    "state",
+    "setting state to false will unfreeze or true to freeze",
+    "BOOL"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetParcelBanlist",
+  "type": "Get",
+  "about": "Fetchs the parcel ban list of the parcel the bot is currently on<br/>If the name returned is lookup the bot is currently requesting the avatar name",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "UnRezObject",
+  "type": "Do",
+  "about": "Returns a rezzed object",
+  "params": [
+   "objectuuid"
+  ],
+  "argHints": [
+   [
+    "objectuuid",
+    "object UUID to unrez"
+   ]
+  ]
+ },
+ {
+  "module": "ParcelCommands",
+  "name": "GetObjectsInParcel",
+  "type": "Get",
+  "about": "Returns all objects in the current parcel",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "RabbitMQ",
+  "name": "SendMessageToQ",
+  "type": "Do",
+  "about": "Send a message to the rabbit server the bot is connected to",
+  "params": [
+   "Qname",
+   "message"
+  ],
+  "argHints": [
+   [
+    "Qname",
+    "Name of the queue to send the message to",
+    "TEXT",
+    "exampleq"
+   ],
+   [
+    "message",
+    "Message to send to the queue",
+    "TEXT",
+    "Hello world"
+   ]
+  ]
+ },
+ {
+  "module": "Self",
+  "name": "SendEmail",
+  "type": "Do",
+  "about": "use the SMTP service to send a email (requires AllowCommandSendMail to be true)",
+  "params": [
+   "to",
+   "subject",
+   "body"
+  ],
+  "argHints": [
+   [
+    "to",
+    "the email addres to send to",
+    "Text",
+    "name@example.com"
+   ],
+   [
+    "subject",
+    "the subject of the email",
+    "Text",
+    "This is the subject"
+   ],
+   [
+    "body",
+    "the contents of the email",
+    "Text",
+    "Email is fun"
+   ]
+  ]
+ },
+ {
+  "module": "Self",
+  "name": "GoHome",
+  "type": "Do",
+  "about": "Makes the bot teleport to its home region",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Self",
+  "name": "PointAt",
+  "type": "Do",
+  "about": "Makes the bot turn to face a avatar and point at it (if found)",
+  "params": [
+   "targetUUID"
+  ],
+  "argHints": [
+   [
+    "targetUUID",
+    "The avatar to point at",
+    "AVATAR"
+   ]
+  ]
+ },
+ {
+  "module": "Self",
+  "name": "ReadKeyValue",
+  "type": "Get",
+  "about": "Reads a value from the KeyValue storage (temp unless SQL is enabled)",
+  "params": [
+   "Key"
+  ],
+  "argHints": [
+   [
+    "Key",
+    "the key we are trying to read from",
+    "Text",
+    "ExampleKey"
+   ]
+  ]
+ },
+ {
+  "module": "Self",
+  "name": "SetKeyValue",
+  "type": "Set",
+  "about": "sets a value for KeyValue storage (temp unless SQL is enabled)",
+  "params": [
+   "Key",
+   "Value"
+  ],
+  "argHints": [
+   [
+    "Key",
+    "the key we are trying to set",
+    "Text",
+    "ExampleKey"
+   ],
+   [
+    "Value",
+    "the value we are tring to put on the key",
+    "Text",
+    "ExampleValue"
+   ]
+  ]
+ },
+ {
+  "module": "Self",
+  "name": "ClearKeyValue",
+  "type": "Set",
+  "about": "Reads a value from the KeyValue storage (temp unless SQL is enabled)",
+  "params": [
+   "Key"
+  ],
+  "argHints": [
+   [
+    "Key",
+    "the key we are trying to clear",
+    "Text",
+    "ExampleKey"
+   ]
+  ]
+ },
+ {
+  "module": "Self",
+  "name": "Sit",
+  "type": "Do",
+  "about": "Makes the bot sit on the ground or on a object if it can see it",
+  "params": [
+   "target"
+  ],
+  "argHints": [
+   [
+    "target",
+    "a object UUID or the word ground",
+    "Text",
+    "ground"
+   ]
+  ]
+ },
+ {
+  "module": "Self",
+  "name": "Stand",
+  "type": "Do",
+  "about": "Makes the bot stand up if sitting (also resets animations)",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Self",
+  "name": "ClickObject",
+  "type": "Do",
+  "about": "Makes the bot sit on the ground or on a object if it can see it",
+  "params": [
+   "target"
+  ],
+  "argHints": [
+   [
+    "target",
+    "the object to click on",
+    "UUID"
+   ]
+  ]
+ },
+ {
+  "module": "Self",
+  "name": "Logoff",
+  "type": "Do",
+  "about": "Makes the bot kill itself you monster",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Self",
+  "name": "GetLastCommands",
+  "type": "Get",
+  "about": "Gets the last 5 commands issued to the bot",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "Services",
+  "name": "EnableAndStartService",
+  "type": "Do",
+  "about": "Marks a service as enabled and starts it",
+  "params": [
+   "servicename"
+  ],
+  "argHints": [
+   [
+    "servicename",
+    "What service to enable",
+    "SERVICES",
+    "HttpService"
+   ]
+  ]
+ },
+ {
+  "module": "Services",
+  "name": "StopService",
+  "type": "Do",
+  "about": "stops a service if it is running",
+  "params": [
+   "servicename"
+  ],
+  "argHints": [
+   [
+    "servicename",
+    "What service to stop",
+    "SERVICES",
+    "HttpService"
+   ]
+  ]
+ },
+ {
+  "module": "Services",
+  "name": "RestartService",
+  "type": "Do",
+  "about": "restarts a service if it is running",
+  "params": [
+   "servicename"
+  ],
+  "argHints": [
+   [
+    "servicename",
+    "What service to Restart",
+    "SERVICES",
+    "HttpService"
+   ]
+  ]
+ },
+ {
+  "module": "Services",
+  "name": "ChangeConfigValue",
+  "type": "Set",
+  "about": "Change or add a config value to a service",
+  "params": [
+   "servicename",
+   "configname",
+   "configvalue"
+  ],
+  "argHints": [
+   [
+    "servicename",
+    "What service to adjust the config for",
+    "SERVICES",
+    "HttpService"
+   ],
+   [
+    "configname",
+    "What config value are we updating",
+    "Text",
+    "example"
+   ],
+   [
+    "configvalue",
+    "What is the new value",
+    "Text",
+    "changedvalue"
+   ]
+  ]
+ },
+ {
+  "module": "StreamAdmin",
+  "name": "FetchNextNotecard",
+  "type": "Get",
+  "about": "A streamadin command",
+  "params": [
+   "endpoint",
+   "endpointcode"
+  ],
+  "argHints": [
+   [
+    "endpoint",
+    "The end point",
+    "Text",
+    "No help given"
+   ],
+   [
+    "endpointcode",
+    "The end point code",
+    "Text",
+    "No help given"
+   ]
+  ]
+ }
+]

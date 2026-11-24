@@ -1,0 +1,6 @@
+bin/
+obj/
+*.user
+.vs/
+tests/shots/
+manager/wwwroot/usernotes/README.md
