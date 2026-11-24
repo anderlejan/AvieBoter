@@ -255,6 +255,7 @@ integer verNum(string v)      // "1.2.3" -> 1002003, to compare versions
 
 settingsMenu()
 {
+    llMessageLinked(LINK_THIS, 0, "slbm-ui|ask", NULL_KEY);      // the core notes its free memory
     string t = "Hide text";
     if (!textOn()) t = "Show text";
     string v = llLinksetDataRead("version");
@@ -263,6 +264,7 @@ settingsMenu()
     if (nw == "") line += " (the newest is not known yet – Update HUD asks).";
     else if (verNum(nw) > verNum(v)) line += " – a newer HUD " + nw + " is ready: press Update HUD.";
     else line += " – the newest.";
+    line += "\nFree memory: " + llLinksetDataRead("memcore") + " KB core, " + (string)(llGetFreeMemory() / 1024) + " KB menu.";
     dialog("settings", "\nHUD settings\n\n" + line + "\n\nSize: Smaller / Bigger (or stretch the HUD in Edit).\nColour: the ring's colour when the bot is ready.\nText: the floating text above the HUD.\nUpdate HUD: a bot in this region brings the newest HUD.",
         ["◀ Menu", "Help", "Unpair…",
          "Reset look", "Colour ▸", t,
@@ -277,22 +279,11 @@ confirm(string action, string question)
 
 help()
 {
-    llOwnerSay("AvieBoter HUD help:\n"
-        + "• Sit with me – sit on a vehicle first; the bot teleports beside you and takes a free seat.\n"
-        + "• Come to me – the bot teleports next to you.   • Stand – the bot stands up.\n"
-        + "• Sit on… – paste an object's key (Edit → General → Copy Keys); the bot sits on it.\n"
-        + "• Adjust ▸ – while the bot sits: Up/Down; Forward/Backward/Left/Right re-seat it a bit moved (seats without a fixed sit spot). Step changes the distance.\n"
-        + "• Follow ▸ – the bot follows you; Closer/Farther and Behind/Left/Right/In front set its place (remembered).\n"
-        );
-    llOwnerSay("AvieBoter HUD help (2):\n"      // llOwnerSay takes at most 1024 bytes
-        + "• Outfit… – type a folder name; the bot wears it instead of its outfit.   • More ▸ – Set home, Log off, Status.\n"
-        + "• Teleport me – the bot sends you a teleport offer to where it is.   • Go home – the bot teleports home.\n"
-        + "• More ▸ Hover ▸ – lift or lower the bot in steps (Reset = the height set in AvieBoter).\n"
-        + "• Settings ▸ Update HUD – shows this HUD's version; a bot in your region brings a newer one.\n"
-        + "• Stand / Fly ON / Fly OFF – one button that follows the bot: Stand while it sits, else it takes off or lands.\n"
-        + "• Settings ▸ – Smaller/Bigger (or stretch the HUD in Edit), ring colour, floating text on/off, Unpair.\n"
-        + "• The ring: your colour = ready, amber = working, red = failed.\n"
-        + "• Another bot: in AvieBoter press Update HUD (or paste its pairing line, /7 pair SLB1|…). Bot ▸ switches between bots.");
+    llOwnerSay("AvieBoter HUD: Sit with me – sit on a vehicle first. Come to me / Teleport me – the bot comes, or offers you a teleport. "
+        + "Stand / Fly ON / Fly OFF follows the bot. Follow ▸ – it follows you. Adjust ▸ – move it on its seat. Sit on… – an object's key. "
+        + "Outfit… – a folder name. More ▸ – Hover, Set home, Log off, Status. Bot ▸ – switch bots. "
+        + "Settings ▸ – size, ring colour, text, Update HUD. Ring: your colour = ready, amber = working, red = failed. "
+        + "More help: AvieBoter → Help.");
 }
 
 default
@@ -335,7 +326,23 @@ default
     {
         if (ch != dialogChannel) return;
         llSetTimerEvent(90.0);
-        if (menu == "sitkey") { menu = "main"; act("siton", [msg]); return; }
+        if (menu == "sitkey")
+        {
+            menu = "main";
+            list w = llParseString2List(llStringTrim(msg, STRING_TRIM), [" ", "\n", ",", ";"], []);
+            integer i;
+            for (i = 0; i < llGetListLength(w); ++i)
+            {
+                string t = llList2String(w, i);
+                key k = (key)t;
+                if (llStringLength(t) == 36)
+                {
+                    if (k) { llOwnerSay(botLabel() + " is going to sit on " + t + "…"); act("siton", [t]); return; }   // a key is tested on its own in LSL
+                }
+            }
+            llOwnerSay("That is not an object key (36 characters, like a5af0b84-db98-a727-438f-272cac90dc21).");
+            return;
+        }
         if (menu == "outfit") { menu = "main"; act("outfit", [msg]); return; }
         if (menu == "confirm")
         {
@@ -443,7 +450,26 @@ default
                 return;
             }
             else if (msg == "Help") { help(); return; }
-            else if (msg == "Update HUD") { act("checkupdate", []); return; }
+            else if (msg == "Update HUD")
+            {
+                // the selected bot first, else another paired bot in this region (only there can a bot update the HUD)
+                list b = bots();
+                integer n = botCount();
+                integer first = activeIndex();
+                integer i;
+                for (i = 0; i < n; ++i)
+                {
+                    integer k = (first + i) % n;
+                    if (llGetAgentSize((key)llList2String(b, k * 3)) != ZERO_VECTOR)
+                    {
+                        llOwnerSay("HUD " + llLinksetDataRead("version") + ": asking " + llList2String(b, k * 3 + 2) + " for a newer one…");
+                        act("checkupdate", [k]);
+                        return;
+                    }
+                }
+                llOwnerSay("HUD " + llLinksetDataRead("version") + ". None of your bots is in this region – use Come to me first.");
+                return;
+            }
             else if (msg == "Unpair…") { confirm("unpair", "Remove " + botLabel() + " from this HUD?\n(The bot itself is not changed.)"); return; }
             settingsMenu();
             return;

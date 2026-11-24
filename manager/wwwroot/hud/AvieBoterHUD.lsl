@@ -1,4 +1,4 @@
-// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.1.4 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
+// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.1.5 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
 // YOU wear this HUD (on your own avatar, not on the bot). It controls the bot avatar that runs in AvieBoter.
 // Easiest: in AvieBoter, tab "HUD", press "Send me a new HUD" - the bot builds it, paired, and gives it to you.
 // A HUD made that way updates itself when the app has a newer one (its ring prim holds the updater).
@@ -6,7 +6,7 @@
 // then paste the pairing line from AvieBoter into local chat:  /7 pair SLB1|<bot key>|<secret>|<bot name>
 // Commands go to the bot as signed instant messages; answers come back to this HUD's own web address.
 
-string  VERSION = "1.1.4";
+string  VERSION = "1.1.5";
 integer PAIR_CHANNEL = 7;
 integer UPDATE_PIN = 7710422;     // must match the updater script
 integer helloSent = FALSE;
@@ -19,8 +19,7 @@ string  lastStatus = "not asked yet";
 key     inviteBot = NULL_KEY;     // a pairing invitation this HUD answered (pairwith): which bot, which code
 string  inviteCode = "";
 integer quietStatus = FALSE;     // a status asked for the menu only (no chat)
-list    checkOrder = [];         // Update HUD: the bots (indexes) still to ask, one at a time
-integer checkBot = -1;           // the bot asked now; -1 = no Update HUD running
+integer checkBot = -1;           // Update HUD: the bot asked (the menu chose one in this region); -1 = none
 
 // ---------- stored bots (linkset data, shared with the menu script) ----------
 list bots()              // strided: key, secret, label
@@ -40,7 +39,6 @@ integer activeIndex()
 key    botKey()    { return (key)llList2String(bots(), activeIndex() * 3); }
 key    keyAt(integer n)    { return (key)llList2String(bots(), n * 3); }
 string labelAt(integer n)  { return llList2String(bots(), n * 3 + 2); }
-string botSecret() { return llList2String(bots(), activeIndex() * 3 + 1); }
 string botLabel()  { if (botCount() == 0) return "no bot"; return llList2String(bots(), activeIndex() * 3 + 2); }
 
 // ---------- to the menu script ----------
@@ -98,54 +96,19 @@ integer updaterLink()      // only updater 2 can take both HUD scripts
     return 0;
 }
 
+helloTo(integer n)     // tells bot n this HUD's version; an older HUD gets updated by that bot
+{
+    string upd = "none";
+    integer u = updaterLink();
+    if (u) upd = (string)llGetLinkKey(u);
+    sendTo(n, "CompanionHudHello", [VERSION, upd, myUrl]);
+}
+
 hello()
 {
     if (helloSent || botCount() == 0 || myUrl == "") return;
     helloSent = TRUE;
-    string upd = "none";
-    integer u = updaterLink();
-    if (u) upd = (string)llGetLinkKey(u);
-    send("CompanionHudHello", [VERSION, upd, myUrl]);
-}
-
-// ---------- Update HUD: ask the paired bots in this region, the selected one first, one at a time ----------
-checkStart()
-{
-    if (myUrl == "") { llOwnerSay("This HUD has no web address yet – try again in a moment."); return; }
-    checkOrder = [];
-    integer n = botCount();
-    integer first = activeIndex();
-    integer i;
-    for (i = 0; i < n; ++i)
-    {
-        integer b = (first + i) % n;
-        if (llGetAgentSize(keyAt(b)) != ZERO_VECTOR) checkOrder += [b];     // only a bot in this region can load scripts into the HUD
-    }
-    if (llGetListLength(checkOrder) == 0)
-    {
-        llOwnerSay("This HUD is version " + VERSION + ". None of your bots is in this region – a bot can update the HUD only here: use Come to me first.");
-        return;
-    }
-    llOwnerSay("This HUD is version " + VERSION + ". Asking your bots for a newer one…");
-    checkNext();
-}
-
-checkNext()
-{
-    llSetTimerEvent(0.0);
-    if (llGetListLength(checkOrder) == 0)
-    {
-        checkBot = -1;
-        llOwnerSay("No bot here could update this HUD (version " + VERSION + ").");
-        return;
-    }
-    checkBot = llList2Integer(checkOrder, 0);
-    checkOrder = llDeleteSubList(checkOrder, 0, 0);
-    string upd = "none";
-    integer u = updaterLink();
-    if (u) upd = (string)llGetLinkKey(u);
-    llSetTimerEvent(15.0);
-    sendTo(checkBot, "CompanionHudHello", [VERSION, upd, myUrl]);
+    helloTo(activeIndex());
 }
 
 // ---------- actions ----------
@@ -164,34 +127,12 @@ sitWithMe()
     key root = llList2Key(llGetObjectDetails(owner, [OBJECT_ROOT]), 0);
     if (!(info & AGENT_SITTING) || root == owner || root == NULL_KEY)
     {
-        llOwnerSay("Sit on the vehicle first, then choose 'Sit with me'. The bot will take a free seat on the same thing.");
+        llOwnerSay("Sit on the vehicle first, then choose Sit with me.");
         return;
     }
     llOwnerSay(botLabel() + " is coming to sit on '" + llKey2Name(root) + "'…");
     showText("coming to sit…");
     send("CompanionJoin", here() + [(string)root, replyTarget()]);
-}
-
-sitOnKey(string text)
-{
-    // accept a pasted key with spaces or other text around it
-    list words = llParseString2List(llStringTrim(text, STRING_TRIM), [" ", "\n", ",", ";"], []);
-    integer i;
-    for (i = 0; i < llGetListLength(words); ++i)
-    {
-        key k = (key)llList2String(words, i);
-        if (llStringLength(llList2String(words, i)) == 36)
-        {
-            if (k)   // LSL: a key is only tested on its own - true for a valid, non-null key
-            {
-                llOwnerSay(botLabel() + " is going to sit on " + (string)k + "…");
-                showText("sitting…");
-                send("CompanionSit", [(string)k, replyTarget()]);
-                return;
-            }
-        }
-    }
-    llOwnerSay("That is not an object key. It looks like a5af0b84-db98-a727-438f-272cac90dc21 (36 characters).");
 }
 
 doAction(string a, list p)
@@ -201,19 +142,13 @@ doAction(string a, list p)
     else if (a == "stand") { send("Stand", []); showText("standing"); ui("pose", "0"); }
     else if (a == "status") send("CompanionStatus", []);
     else if (a == "quietstatus") { quietStatus = TRUE; send("CompanionStatus", []); }
-    else if (a == "checkupdate") checkStart();
-    else if (a == "fly")
-    {
-        string w = " lands…";      // LSL has no ?: operator
-        if (llList2String(p, 0) == "on") w = " takes off…";
-        llOwnerSay(botLabel() + w);
-        send("CompanionFly", [llList2String(p, 0), replyTarget()]);
-    }
-    else if (a == "lure") { llOwnerSay(botLabel() + " is sending you a teleport offer…"); send("CompanionTeleportMe", []); }
+    else if (a == "checkupdate") { checkBot = (integer)llList2String(p, 0); helloTo(checkBot); }
+    else if (a == "fly") send("CompanionFly", [llList2String(p, 0), replyTarget()]);
+    else if (a == "lure") { llOwnerSay(botLabel() + " sends you a teleport offer…"); send("CompanionTeleportMe", []); }
     else if (a == "gohome") { llOwnerSay(botLabel() + " is teleporting to its home location."); send("GoHome", []); showText("going home"); }
     else if (a == "logoff") { llOwnerSay("Logging " + botLabel() + " out."); showText("logging out"); send("Logoff", []); }
     else if (a == "sethome") { llOwnerSay("Setting " + botLabel() + "'s home where it stands now…"); send("CompanionSetHome", []); }
-    else if (a == "siton") sitOnKey(llList2String(p, 0));
+    else if (a == "siton") { showText("sitting…"); send("CompanionSit", [llList2String(p, 0), replyTarget()]); }
     else if (a == "outfit")
     {
         string folder = llStringTrim(llList2String(p, 0), STRING_TRIM);
@@ -315,7 +250,7 @@ pair(string code)
     string label = llList2String(bots(), at + 2);
     setStatus("paired");
     showText("paired");
-    llOwnerSay("Paired: this HUD, worn by you (" + llKey2Name(owner) + "), now controls the bot " + label + ". Touch the HUD for the menu. Asking the bot for its status…");
+    llOwnerSay("Paired with " + label + ". Touch the HUD for the menu.");
     send("CompanionStatus", []);
     helloSent = FALSE;
     hello();
@@ -372,16 +307,9 @@ handleReply(string command, string reply)
         ui("ring", "");
         key from = botKey();
         if (checkBot != -1) from = keyAt(checkBot);
-        if (res == "ready" && u)
-        {
-            llSetTimerEvent(0.0);
-            checkBot = -1;
-            llOwnerSay("Updating this HUD…");
-            llMessageLinked(u, 0, "slbm-update-open", from);
-            return;
-        }
-        llOwnerSay("The HUD could not be updated: " + res);
-        if (checkBot != -1) checkNext();      // Update HUD: try the next bot here
+        checkBot = -1;
+        if (res == "ready" && u) { llOwnerSay("Updating this HUD…"); llMessageLinked(u, 0, "slbm-update-open", from); }
+        else llOwnerSay("The HUD could not be updated: " + res);
         return;
     }
     if (cmd == "CompanionHudHello")
@@ -390,20 +318,13 @@ handleReply(string command, string reply)
         string action = llJsonGetValue(info, ["action"]);
         string latest = llJsonGetValue(info, ["latest"]);
         if (latest != JSON_INVALID && latest != "") llLinksetDataWrite("newest", latest);
-        if (checkBot != -1)
-        {
-            llSetTimerEvent(0.0);
-            string who = labelAt(checkBot);
-            if (action == "updating") { llOwnerSay(who + " is bringing HUD " + latest + "…"); llSetTimerEvent(120.0); return; }
-            if (action == "off") { llOwnerSay(who + " has HUD " + latest + ", but its automatic HUD updates are off in AvieBoter."); checkNext(); return; }
-            if (action == "manual") { checkBot = -1; llOwnerSay("There is a newer HUD (" + latest + "), but this one cannot update itself: in AvieBoter open the bot, tab HUD, and press \"Send me a new HUD\"."); return; }
-            checkBot = -1;
-            if (latest == VERSION) llOwnerSay("This HUD is up to date: version " + VERSION + " is the newest.");
-            else llOwnerSay("This HUD is version " + VERSION + "; " + who + " has nothing newer (" + latest + ").");
-            return;
-        }
-        if (action == "manual") llOwnerSay("AvieBoter has a newer HUD (" + latest + "; this one is " + VERSION + "). This HUD cannot update itself: in the app open the bot, tab HUD, and press \"Send me a new HUD\".");
-        else if (action == "off") llOwnerSay("AvieBoter has a newer HUD (" + latest + "). Automatic HUD updates are switched off in the app.");
+        string who = botLabel();
+        if (checkBot != -1) who = labelAt(checkBot);
+        if (action == "updating") llOwnerSay(who + " brings HUD " + latest + "…");
+        else if (action == "manual") llOwnerSay("Newer HUD " + latest + ": this one cannot update itself – press \"Send me a new HUD\" in AvieBoter.");
+        else if (action == "off") llOwnerSay(who + " has HUD " + latest + ", but HUD updates are off for it in AvieBoter.");
+        else if (checkBot != -1) llOwnerSay("HUD " + VERSION + " is up to date.");
+        if (action != "updating") checkBot = -1;
         return;
     }
     // background results (CompanionJoin, CompanionCome, CompanionSit, CompanionWear, CompanionAdjust)
@@ -416,11 +337,9 @@ handleReply(string command, string reply)
         if (llSubStringIndex(result, "could not") == 0 || llSubStringIndex(result, "teleport failed") == 0
             || llSubStringIndex(result, "not ") == 0 || llSubStringIndex(result, "error") == 0) ui("ring", "error");
         else ui("ring", "");
-        if (result == "seated" && cmd == "CompanionSit") { llOwnerSay(botLabel() + " is seated. (" + lastStatus + ")"); showText("seated"); }
-        else if (result == "seated") { llOwnerSay(botLabel() + " is sitting with you. (" + lastStatus + ")"); showText("seated"); }
-        else if (result == "arrived") { llOwnerSay(botLabel() + " has arrived. (" + lastStatus + ")"); showText("arrived"); }
-        else if (result == "already here") { llOwnerSay(botLabel() + " is already next to you. (" + lastStatus + ")"); showText("next to you"); }
-        else { llOwnerSay(botLabel() + ": " + result); showText(result); }
+        if (result == "seated" || result == "arrived" || result == "already here") result += " (" + lastStatus + ")";
+        llOwnerSay(botLabel() + ": " + result);
+        showText(llGetSubString(result, 0, 40));
         return;
     }
     string status = llJsonGetValue(reply, ["status"]);
@@ -497,15 +416,7 @@ default
             if (llListFindList(bots(), [llList2String(p, 1)]) == -1) pair((string)id);
             llMessageLinked(from, 0, "slbm-paired", NULL_KEY);
         }
-        else if (str == "slbm-ui|ask") { ui("status", lastStatus); }
-    }
-
-    timer()
-    {
-        llSetTimerEvent(0.0);
-        if (checkBot == -1) return;
-        llOwnerSay(labelAt(checkBot) + " did not answer.");
-        checkNext();
+        else if (str == "slbm-ui|ask") { ui("status", lastStatus); llLinksetDataWrite("memcore", (string)(llGetFreeMemory() / 1024)); }
     }
 
     http_request(key id, string method, string body)
@@ -537,7 +448,7 @@ default
         {
             // a pairing invitation from a bot's IM (one-time code): ask that bot for its pairing line
             list p = llParseString2List(msg, [" "], []);
-            if (llGetSubString(myUrl, 0, 7) != "https://") { llOwnerSay("This HUD has no secure web address here yet – try again in a moment or in another region."); return; }
+            if (llGetSubString(myUrl, 0, 7) != "https://") { llOwnerSay("No secure web address here yet – try again in a moment."); return; }
             inviteBot = (key)llList2String(p, 1);
             inviteCode = llList2String(p, 2);
             llOwnerSay("Asking the bot to pair with this HUD…");
