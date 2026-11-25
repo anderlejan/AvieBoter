@@ -49,6 +49,7 @@ public class App : Application
         notifier = new Notifier(this);
         if (StartAfterLaunch != "") StartBot(StartAfterLaunch);
         Bots.ChatArrived += (r, items) => Dispatcher.BeginInvoke(() => notifier.Handle(r, items));
+        Bots.Alert += (r, title, text) => Dispatcher.BeginInvoke(() => tray?.ShowPopup(title, text, r.Profile.Id));
         AnnounceUpdated();
         // updates: once a minute after the start, then the hourly timer checks whether a day has passed
         updateTimer.Tick += async (_, _) => await AutoUpdate(false);

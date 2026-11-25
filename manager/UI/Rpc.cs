@@ -263,6 +263,14 @@ public class Rpc
                     if (r.Running) _ = r.RunCommand("CompanionHudAutoUpdate", new[] { r.Profile.AutoUpdateHud ? "on" : "off" });
                     return null;
                 }
+            case "bot.youngAlert":
+                {
+                    var r = Runner(S(a, 0));
+                    r.Profile.YoungAlertDays = Math.Max(0, a[1]!.GetValue<int>());
+                    app.Bots.Save(); app.Bots.Notify();
+                    if (r.Running) _ = r.RunCommand("CompanionYoungAlert", new[] { r.Profile.YoungAlertDays.ToString() });
+                    return null;
+                }
             case "bot.saveEvents":
                 {
                     var r = Runner(S(a, 0));
@@ -474,6 +482,7 @@ public class Rpc
                 ["joinConferences"] = p.JoinConferences,
                 ["autoUpdateHud"] = p.AutoUpdateHud,
                 ["saveEvents"] = p.SaveEvents,
+                ["youngAlertDays"] = p.YoungAlertDays,
                 ["recentOutfits"] = JsonSerializer.SerializeToNode(p.RecentOutfits),
                 ["seats"] = JsonSerializer.SerializeToNode(p.Seats.OrderByDescending(x => x.Uses).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase), JsonStore.Options),
             });

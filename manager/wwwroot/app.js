@@ -199,7 +199,7 @@
   }
 
   // ---------- main area ----------
-  const SECTIONS = [['overview', '🛈 Overview'], ['chat', '💬 Chat'], ['radar', '📡 Radar'], ['hud', '🎮 HUD'], ['commands', '⌘ Commands'], ['log', '📜 Log'], ['bot', '✎ Bot settings']];
+  const SECTIONS = [['overview', '🛈 Overview'], ['chat', '💬 Chat'], ['radar', '📡 Radar'], ['hud', '🎮 HUD'], ['commands', '⌘ Commands'], ['groups', '👥 Groups'], ['log', '📜 Log'], ['bot', '✎ Bot settings']];
 
   function renderMain() {
     stopLogTimer();
@@ -239,7 +239,7 @@
     m.querySelectorAll('[data-sec]').forEach(x => x.onclick = () => { section = x.dataset.sec; rpc('setting', 'lastSection', section).catch(() => {}); renderMain(); navPush(); });
     updateHead(b);
     updateEnabled(b);
-    ({ overview: renderOverview, chat: renderChat, radar: renderRadar, hud: renderHud, commands: renderCommands, log: renderLog, bot: renderBotSettings })[section](b);
+    ({ overview: renderOverview, chat: renderChat, radar: renderRadar, hud: renderHud, commands: renderCommands, groups: renderGroups, log: renderLog, bot: renderBotSettings })[section](b);
   }
 
   async function act(m, msg) {
@@ -290,6 +290,7 @@
         <button class="btn" data-needs-online data-cmd="CompanionSetHome" title="Makes the place where the bot stands its home (SL allows it only on land where the bot may set home)">Set home here</button>
         <button class="btn" data-needs-online data-cmd="CompanionStatus">Refresh status</button>
         <button class="btn" data-needs-online data-cmd="ResetAnimations">Reset animations</button>
+        <button class="btn" data-needs-online data-cmd="CompanionUndeform" title="After an outfit change left the bot deformed: stops all its animations and sends its appearance again, so viewers redraw it">Undeform</button>
       </div>
       <h2>Sit on</h2>
       <div id="seatList" class="seats"></div>
@@ -536,45 +537,97 @@
     showMenu(anchor, items);
   }
 
+  // born "M/D/YYYY" (profile) -> days of age; text like "2 y 3 m" / "40 days", new avatars marked
+  function ageDays(born) {
+    const m = /^(\d+)\/(\d+)\/(\d+)$/.exec(born || ''); if (!m) return null;
+    return Math.floor((Date.now() - new Date(+m[3], +m[1] - 1, +m[2]).getTime()) / 86400000);
+  }
+  function ageText(born) {
+    const d = ageDays(born);
+    if (d == null) return '<span class="muted">…</span>';
+    const y = Math.floor(d / 365.25), mo = Math.floor((d - y * 365.25) / 30.44);
+    const t = d < 60 ? d + ' day' + (d === 1 ? '' : 's') : y ? y + ' y' + (mo ? ' ' + mo + ' m' : '') : mo + ' months';
+    return `<span class="${d < 30 ? 'warn' : ''}" title="In Second Life since ${esc(born)}">${t}</span>`;
+  }
+
+  // a ✕ inside search and filter fields: clears the text (Esc in the field does the same)
+  function clearable(sel) {
+    const inp = typeof sel === 'string' ? $(sel) : sel;
+    if (!inp || inp.parentNode.classList.contains('clr')) return;
+    const w = document.createElement('span');
+    w.className = 'clr' + (inp.classList.contains('w') ? ' w' : '');
+    if (inp.style.maxWidth) { w.style.maxWidth = inp.style.maxWidth; inp.style.maxWidth = ''; }
+    inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
+    const x = document.createElement('button');
+    x.type = 'button'; x.className = 'x'; x.textContent = '✕'; x.title = 'Clear'; x.tabIndex = -1;
+    w.appendChild(x);
+    const sync = () => x.classList.toggle('hidden', !inp.value);
+    const clear = () => { inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); sync(); inp.focus(); };
+    x.onclick = clear;
+    inp.addEventListener('input', sync);
+    inp.addEventListener('keydown', e => { if (e.key === 'Escape' && inp.value) { e.preventDefault(); e.stopPropagation(); clear(); } });
+    sync();
+  }
+
   // ---------- Radar ----------
   let radarTimer = 0, pendingIm = null;
   function stopRadarTimer() { clearInterval(radarTimer); radarTimer = 0; }
   const EV_TEXT = {
     arrive: ['→', 'arrived'], leave: ['←', 'left'], hud: ['🎮', 'wore the HUD'], 'hud-off': ['🎮', 'took the HUD off'],
     use: ['▶', 'started using the bot'], refused: ['⛔', 'HUD refused – not one of the bot\'s people'],
-    follow: ['👣', 'is followed by the bot'], 'follow-lost': ['👣', 'out of sight – the bot stopped following'], region: ['🗺', 'the bot entered the region']
+    follow: ['👣', 'is followed by the bot'], 'follow-lost': ['👣', 'out of sight for 10 minutes – the bot stopped following'], 'hud-check': ['🎮', 'asked for a HUD update check'], young: ['🐣', 'is new in Second Life'], 'group-invite': ['👥', 'group invitation for the bot – answer it under Groups'], region: ['🗺', 'the bot entered the region']
   };
   function renderRadar(b) {
     const c = $('#content');
+    const newDays = b.youngAlertDays > 0 ? b.youngAlertDays : (+ui.radarNewDays || 30);
     c.innerHTML = `
       <div class="row" style="align-items:center;gap:8px;margin-bottom:8px">
         <input class="in" id="radQ" placeholder="Filter names" style="max-width:220px" value="${esc(ui.radarQ || '')}">
-        <span class="muted small" id="radInfo"></span><span class="grow"></span>
-        <label class="switch small" title="Off: comings and goings are only listed here while the app runs. On: also written to daily files on this PC (one JSON object per line, for other tools)."><input type="checkbox" id="radSave" ${b.saveEvents ? 'checked' : ''}><span class="tr"></span>Save comings and goings to files</label>
-        <button class="btn sm" id="radFiles" title="Daily files with who came and went – one JSON object per line, for other tools">📂 Files</button>
+        <label class="switch small" title="Only avatars within 20 m of the bot – they read its local chat (whisper 10 m, shout 100 m)"><input type="checkbox" id="radChat" ${ui.radarChat === '1' ? 'checked' : ''}><span class="tr"></span>In chat range</label>
+        <label class="switch small" title="Only avatars younger than the age chosen on the right"><input type="checkbox" id="radNew" ${ui.radarNew === '1' ? 'checked' : ''}><span class="tr"></span>New only</label>
+        <select class="in sm" id="radNewDays" title="New means: in Second Life for less than…" style="width:auto">${[7, 14, 30, 90].map(d => `<option value="${d}" ${newDays === d ? 'selected' : ''}>under ${d} days</option>`).join('')}</select>
+        <span class="muted small" id="radInfo"></span>
       </div>
-      <table class="tbl radar"><thead><tr><th>Name</th><th class="num">Distance</th><th>Where</th><th></th></tr></thead><tbody id="radBody"></tbody></table>
-      <h2 style="margin-top:16px">Comings and goings</h2>
+      <table class="tbl radar"><thead id="radHead"></thead><tbody id="radBody"></tbody></table>
+      <div class="row" style="align-items:center;gap:8px;margin-top:16px"><h2 style="margin:0">Comings and goings</h2><span class="grow"></span>
+        <label class="switch small" title="A Windows popup when an avatar younger than the chosen age is in the bot's region – also while the Radar is closed. The bot then asks Second Life for the age of each avatar arriving there (off by default)."><input type="checkbox" id="radAlert" ${b.youngAlertDays > 0 ? 'checked' : ''}><span class="tr"></span>Alert me about new avatars</label>
+        <label class="switch small" title="Off: comings and goings are only listed here while the app runs. On: also written to daily files on this PC (one JSON object per line, for other tools)."><input type="checkbox" id="radSave" ${b.saveEvents ? 'checked' : ''}><span class="tr"></span>Save comings and goings to files</label>
+        <button class="btn sm" id="radFiles" title="Daily files with who came and went – one JSON object per line, for other tools">📂 Files</button></div>
       <div class="log evlog" id="radLog"></div>`;
     let rows = [];
+    const ss = String(ui.radarSort || 'dist:1').split(':'), sort = { k: ss[0] || 'dist', d: ss[1] === '-1' ? -1 : 1 };
+    const COLS = [['name', 'Name', ''], ['age', 'Age', 'num'], ['dist', 'Distance', 'num'], ['where', 'Where', '']];
+    const keyOf = (r, k) => k === 'name' ? (r.name || '~').toLowerCase() : k === 'age' ? (ageDays(r.born) ?? 1e9) : k === 'where' ? (r.region || '') + ' ' + String(r.x).padStart(3, '0') + String(r.y).padStart(3, '0') : r.dist;
+    const drawHead = () => {
+      $('#radHead').innerHTML = '<tr>' + COLS.map(([k, t, cl]) => `<th class="${cl} sortable" data-sort="${k}" title="Sort by ${t.toLowerCase()} – click again to reverse">${t}${sort.k === k ? (sort.d > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('') + '<th></th></tr>';
+    };
+    $('#radHead').onclick = e => {
+      const th = e.target.closest('[data-sort]'); if (!th) return;
+      if (sort.k === th.dataset.sort) sort.d = -sort.d; else { sort.k = th.dataset.sort; sort.d = 1; }
+      saveUi('radarSort', sort.k + ':' + sort.d); drawHead(); draw();
+    };
+    drawHead();
     const draw = () => {
-      const q = ($('#radQ').value || '').toLowerCase();
-      const list = rows.filter(r => !q || (r.name || '').toLowerCase().includes(q));
-      $('#radInfo').textContent = b.state !== 'online' ? 'The bot is not online.' : `${rows.length} avatar${rows.length === 1 ? '' : 's'} around · updated every 3 s`;
+      const q = ($('#radQ').value || '').toLowerCase(), chatOnly = $('#radChat').checked, newOnly = $('#radNew').checked, nd = +$('#radNewDays').value;
+      const list = rows.filter(r => (!q || (r.name || '').toLowerCase().includes(q)) && (!chatOnly || r.dist <= 20) && (!newOnly || (ageDays(r.born) ?? 1e9) < nd))
+        .sort((x, y) => { const a = keyOf(x, sort.k), c = keyOf(y, sort.k); return (a < c ? -1 : a > c ? 1 : x.dist - y.dist) * sort.d; });
+      const near = rows.filter(r => r.dist <= 20).length;
+      $('#radInfo').textContent = b.state !== 'online' ? 'The bot is not online.' : `${rows.length} avatar${rows.length === 1 ? '' : 's'} around, ${near} in chat range · updated every 3 s`;
       const fol = b.status && b.status.following;
       $('#radBody').innerHTML = list.map(r => `<tr data-av="${esc(r.uuid)}">
         <td><b>${esc(r.name || '(name loading…)')}</b>${fol && fol === r.name ? ' <span class="pill online" style="padding:0 6px">👣 followed</span>' : ''}${(b.masters || []).some(m => sameAvatar(m, r.name)) ? ' <span class="muted small">🤝 uses the bot</span>' : ''}</td>
-        <td class="num">${r.precise ? '' : '≈ '}${r.dist < 10 ? r.dist.toFixed(1) : Math.round(r.dist)} m</td>
+        <td class="num">${ageText(r.born)}</td>
+        <td class="num">${r.dist <= 20 ? '<span class="chatr" title="Within 20 m: reads the bot\'s local chat">💬</span> ' : ''}${r.precise ? '' : '≈ '}${r.dist < 10 ? r.dist.toFixed(1) : Math.round(r.dist)} m</td>
         <td class="muted small">${r.sitting ? '🪑 ' : ''}${esc(r.region)} (${r.x}, ${r.y}${r.precise ? ', ' + r.z : ''})</td>
         <td><button class="btn sm" data-avm="${esc(r.uuid)}" title="Actions">⋯</button></td></tr>`).join('')
-        || `<tr><td colspan="4" class="muted">${b.state === 'online' ? 'Nobody around the bot right now.' : 'Start the bot to see who is around.'}</td></tr>`;
+        || `<tr><td colspan="5" class="muted">${b.state === 'online' ? (rows.length ? 'Nobody matches the filters.' : 'Nobody around the bot right now.') : 'Start the bot to see who is around.'}</td></tr>`;
     };
     const drawLog = ev => {
       $('#radLog').innerHTML = (ev || []).map(e => {
         const [ic, tx] = EV_TEXT[e.type] || ['•', e.type];
         const t = new Date(e.t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         const who = e.type === 'region' ? esc(e.region) + ` <span class="muted">(${esc(e.extra)})</span>` : `<b>${esc(e.name || e.uuid)}</b>`;
-        const extra = ['hud', 'hud-off', 'use', 'refused'].includes(e.type) && e.extra ? ` <span class="muted">${esc(e.extra)}</span>` : '';
+        const extra = ['hud', 'hud-off', 'hud-check', 'use', 'refused', 'young', 'group-invite'].includes(e.type) && e.extra ? ` <span class="muted">${esc(e.extra)}</span>` : '';
         return `<div><span class="muted">${esc(t)}</span> ${ic} ${who} ${esc(tx)}${e.type === 'region' ? '' : ` <span class="muted">· ${esc(e.region)}</span>`}${extra}</div>`;
       }).join('') || '<div class="muted">Nothing yet. Arrivals and departures in the bot\'s region, HUDs worn and taken off, and people starting to use the bot are listed here and saved to daily files.</div>';
     };
@@ -587,6 +640,12 @@
       try { drawLog(await rpc('bot.events', b.id)); } catch { }
     };
     $('#radQ').oninput = () => { saveUi('radarQ', $('#radQ').value); draw(); };
+    $('#radChat').onchange = e => { saveUi('radarChat', e.target.checked ? '1' : ''); draw(); };
+    $('#radNew').onchange = e => { saveUi('radarNew', e.target.checked ? '1' : ''); draw(); };
+    const setAlert = on => rpc('bot.youngAlert', b.id, on ? +$('#radNewDays').value : 0).then(() => { b.youngAlertDays = on ? +$('#radNewDays').value : 0; });
+    $('#radNewDays').onchange = e => { saveUi('radarNewDays', e.target.value); draw(); if ($('#radAlert').checked) setAlert(true).catch(fail); };
+    $('#radAlert').onchange = e => setAlert(e.target.checked).then(() => toast(e.target.checked ? `A popup when an avatar under ${$('#radNewDays').value} days is in ${b.label}'s region` : 'No popups about new avatars')).catch(fail);
+    clearable('#radQ');
     $('#radFiles').onclick = () => rpc('bot.openEvents', b.id).catch(fail);
     $('#radSave').onchange = e => { b.saveEvents = e.target.checked; rpc('bot.saveEvents', b.id, e.target.checked).then(() => toast(e.target.checked ? 'Comings and goings of ' + b.label + ' are saved to daily files from now on.' : 'Comings and goings of ' + b.label + ' are no longer saved (files already written stay).')).catch(fail); };
     $('#radBody').onclick = e => {
@@ -638,15 +697,15 @@
         <span class="small" id="hudJob"></span>
       </div>
       <h2>People who use this bot</h2>
-      <p class="muted">Everyone here can have their own HUD and use ${esc(botName)} at the same time – share the bot with a friend by adding them and sending them a HUD. Removing someone stops their HUD at once. Who came and went is listed under 📡 Radar.</p>
+      <p class="muted">Everyone here can have their own HUD and use ${esc(botName)} at the same time – share the bot with a friend by adding them and sending them a HUD (＋ Add alone sends no HUD – for someone who already has one). Removing someone stops their HUD at once. Who came and went is listed under 📡 Radar.</p>
       <div class="people" id="ppl">${(b.masters || []).map((m, i) => `<div class="prow"><span class="grow">${i === 0 ? '👤' : '🤝'} <b>${esc(m)}</b>${i === 0 ? ' <span class="muted small">(you)</span>' : ''}</span>
         <button class="btn sm" data-psend="${esc(m)}" title="The bot builds a HUD and gives it to ${esc(m)}">🎁 Send HUD</button>
         <button class="btn sm" data-pupd="${esc(m)}" title="Puts every bot of this app that ${esc(m)} may use into the HUD ${esc(m)} wears">🔄 Update HUD</button>
         ${i === 0 ? '' : `<button class="btn sm" data-prm="${esc(m)}" title="${esc(m)} may no longer use the bot">✕ Remove</button>`}</div>`).join('')}</div>
-      <div class="actions"><input class="in" id="pplIn" placeholder="Friend's avatar name, e.g. Jane Resident" style="max-width:300px"><button class="btn" id="pplAdd">＋ Add and send a HUD</button></div>
+      <div class="actions"><input class="in" id="pplIn" placeholder="Friend's avatar name, e.g. Jane Resident" style="max-width:300px"><button class="btn" id="pplAdd" title="They may use the bot – no HUD is sent (someone who already has a HUD keeps using it)">＋ Add</button><button class="btn" id="pplAddSend" title="Add them and let the bot build a new HUD and give it to them">＋ Add and send a HUD</button></div>
       <p class="muted small">The bot needs a spot where it may build for a minute (your own land usually works; else a public sandbox such as Sandbox Cordova). The first time it also makes its <i>courier</i> – a tiny object it wears as its own HUD, which nobody sees – that delivers HUD updates.</p>
       <label class="switch" style="margin-top:4px"><input type="checkbox" id="hudAuto" ${b.autoUpdateHud !== false ? 'checked' : ''}><span class="tr"></span>Update HUDs automatically</label>
-      <div class="muted small" style="margin:4px 0 0 47px">When this app has a newer HUD, a HUD made by the bot updates itself a few seconds after you wear it (the bot must be in the same region). Your pairings stay.</div>
+      <div class="muted small" style="margin:4px 0 0 47px">When this app has a newer HUD, a HUD made by the bot updates itself a few seconds after you wear it (the bot must be in the same region). Your pairings stay. Update HUD pressed in the HUD's Settings works even when this is off, and first looks on GitHub for a newer HUD.</div>
       <div class="small" id="hudVer" style="margin-top:8px"></div>
       <details style="margin-top:14px"><summary class="muted">Or make the HUD by hand (it cannot update itself)</summary>
       <ol class="steps">
@@ -673,16 +732,19 @@
       if (up) updateHud(up.dataset.pupd, up);
       if (rm) { try { await rpc('people.remove', b.id, rm.dataset.prm); toast(rm.dataset.prm + ' can no longer use the bot'); await refresh(); renderMain(); } catch (er) { fail(er); } }
     };
-    $('#pplAdd').onclick = async () => {
+    const addPerson = async send => {
       const n = $('#pplIn').value.trim();
       if (!n) { toast('Type the friend\'s avatar name first', 'bad'); return; }
       try {
         const r = await rpc('people.add', b.id, n);
-        toast(n + ' may use the bot' + (r && r.restartNeeded ? ' (their HUD works now; IM commands and teleport offers from them after the next bot restart)' : ''));
-        if (b.state === 'online') await sendHud(n);
+        toast(n + ' may use the bot' + (r && r.restartNeeded ? ' (their HUD works now; IM commands and teleport offers from them after the next bot restart)' : '')
+          + (send ? '' : ' – no HUD sent; use 🎁 Send HUD or 🔄 Update HUD in their row when needed'));
+        if (send) { if (b.state === 'online') await sendHud(n); else toast('The bot is offline – no HUD sent. Start it, then press 🎁 Send HUD in their row.', 'bad'); }
         await refresh(); renderMain();
       } catch (er) { fail(er); }
     };
+    $('#pplAdd').onclick = () => addPerson(false);
+    $('#pplAddSend').onclick = () => addPerson(true);
     $('#hudUpd').onclick = e => updateHud((b.masters || [])[0] || '', e.currentTarget);
     $('#hudSend').onclick = async () => {
       const to = (b.masters || [])[0] || '';
@@ -831,6 +893,159 @@
   // ---------- Commands ----------
   const HIDDEN_MODULES = ['Discord', 'RabbitMQ', 'StreamAdmin', 'Services', 'Funds'];
   let selCmd = '';
+  // ---------- Groups ----------
+  // the bot's groups, like a viewer's Groups window: active group and title, notices, invite, members and roles
+  async function grpRun(b, cmd, args) {
+    const r = await rpc('bot.run', b.id, cmd, args);
+    if (!r || r.ok === false) throw new Error((r && r.reply) || cmd + ' failed');
+    return r.reply;
+  }
+  async function renderGroups(b) {
+    const c = $('#content');
+    if (b.state !== 'online') { c.innerHTML = '<p class="muted">Start the bot to see and manage its groups.</p>'; return; }
+    c.innerHTML = `<div class="row" style="align-items:center;gap:8px"><span class="muted" id="grpInfo">Asking Second Life for the bot's groups…</span><span class="grow"></span>
+        <button class="btn sm" id="grpRefresh">⟳ Refresh</button></div>
+      <table class="tbl" style="margin-top:8px"><thead><tr><th>Group</th><th>Notices</th><th>In profile</th><th></th></tr></thead><tbody id="grpBody"></tbody></table>
+      <div class="actions" style="margin-top:10px"><input class="in" id="grpJoinKey" placeholder="Group key (UUID) of an open group" style="max-width:340px"><button class="btn" id="grpJoin">Join group</button>
+        <button class="btn" id="grpNone" title="Show no group tag over the bot">No active group</button></div>
+      <div id="grpInv"></div>
+      <div id="grpDetail" style="margin-top:16px"></div>`;
+    let data = { groups: [] };
+    const loadInv = async () => {
+      let inv = [];
+      try { inv = JSON.parse(await grpRun(b, 'CompanionGroupInvites', [])); } catch { return; }
+      if (section !== 'groups') return;
+      $('#grpInv').innerHTML = inv.length ? `<h2 style="margin-top:14px">Invitations</h2><table class="tbl"><tbody>${inv.map(i => `<tr data-inv="${esc(i.group)}"><td>${esc(i.message)}<div class="muted small">${esc(i.from)} · ${new Date(i.t * 1000).toLocaleString()}</div></td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn sm pri" data-ia="accept">Accept</button> <button class="btn sm" data-ia="decline">Decline</button></td></tr>`).join('')}</tbody></table>
+        <p class="muted small">Joining may cost a fee – the invitation says so. The bot can be in a limited number of groups.</p>` : '';
+    };
+    $('#grpInv').onclick = async e => {
+      const btn = e.target.closest('[data-ia]'); if (!btn) return;
+      const g = btn.closest('[data-inv]').dataset.inv;
+      try { toast('Invitation ' + await grpRun(b, 'CompanionGroupInviteAnswer', [g, btn.dataset.ia])); } catch (er) { fail(er); }
+      loadInv(); setTimeout(load, 2500);
+    };
+    const load = async () => {
+      loadInv();
+      try { data = JSON.parse(await grpRun(b, 'CompanionGroupList', [])); }
+      catch (e) { $('#grpInfo').textContent = 'Could not read the groups: ' + e.message; return; }
+      if (section !== 'groups') return;
+      const g = data.groups || [];
+      $('#grpInfo').textContent = g.length ? `${b.botName || b.label} is in ${g.length} group${g.length === 1 ? '' : 's'}` + (g.some(x => x.active) ? '' : ' · no active group') : `${b.botName || b.label} is in no group.`;
+      $('#grpBody').innerHTML = g.map(x => `<tr data-g="${esc(x.id)}">
+        <td>${x.active ? '<span class="pill online" style="padding:0 8px" title="The active group: its tag shows over the bot">★ active</span> ' : ''}<b>${esc(x.name)}</b></td>
+        <td><label class="switch small"><input type="checkbox" data-gnot ${x.notices ? 'checked' : ''}><span class="tr"></span></label></td>
+        <td><label class="switch small"><input type="checkbox" data-gprof ${x.profile ? 'checked' : ''}><span class="tr"></span></label></td>
+        <td style="text-align:right;white-space:nowrap">${x.active ? '' : '<button class="btn sm" data-gact>Activate</button> '}<button class="btn sm ${ui.groupSel === x.id ? 'pri' : ''}" data-gopen>Members and more ▸</button> <button class="btn sm" data-gleave>Leave…</button></td></tr>`).join('')
+        || '<tr><td colspan="4" class="muted">No groups.</td></tr>';
+      const sel = g.find(x => x.id === ui.groupSel);
+      if (sel) detail(sel); else $('#grpDetail').innerHTML = '';
+    };
+    const doAct = async (gid, action, avatar, role, msg, reload) => {
+      try { const r = await grpRun(b, 'CompanionGroupDo', [gid, action, avatar || 'none', role || 'none']); toast(msg || r); if (reload) setTimeout(load, 1500); return true; }
+      catch (e) { fail(e); return false; }
+    };
+    $('#grpRefresh').onclick = load;
+    $('#grpNone').onclick = () => doAct('none', 'none', '', '', 'No active group', true);
+    $('#grpJoin').onclick = () => {
+      const k = $('#grpJoinKey').value.trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k)) { toast('Paste the group\'s key (UUID) – in a viewer: the group\'s profile → Copy key', 'bad'); return; }
+      doAct(k, 'join', '', '', 'Joined the group', true);
+    };
+    $('#grpBody').onclick = e => {
+      const tr = e.target.closest('[data-g]'); if (!tr) return;
+      const g = (data.groups || []).find(x => x.id === tr.dataset.g); if (!g) return;
+      if (e.target.closest('[data-gact]')) doAct(g.id, 'activate', '', '', g.name + ' is the active group now', true);
+      if (e.target.closest('[data-gopen]')) { saveUi('groupSel', ui.groupSel === g.id ? '' : g.id); load(); }
+      if (e.target.closest('[data-gleave]')) confirmDlg('Leave ' + g.name + '?', b.label + ' leaves the group. Joining again may need a new invitation (or a fee).', 'Leave', () => { if (ui.groupSel === g.id) saveUi('groupSel', ''); doAct(g.id, 'leave', '', '', 'Left ' + g.name, true); });
+    };
+    $('#grpBody').onchange = e => {
+      const tr = e.target.closest('[data-g]'); if (!tr) return;
+      if (e.target.matches('[data-gnot]')) doAct(tr.dataset.g, 'notices', e.target.checked ? 'on' : 'off', '', e.target.checked ? 'Notices from this group: on' : 'Notices from this group: off');
+      if (e.target.matches('[data-gprof]')) doAct(tr.dataset.g, 'profile', e.target.checked ? 'on' : 'off', '', e.target.checked ? 'Shown in the bot\'s profile' : 'Hidden from the bot\'s profile');
+    };
+
+    const detail = async g => {
+      const d = $('#grpDetail');
+      d.innerHTML = `<h2>${esc(g.name)}</h2><p class="muted">Loading roles, titles and members…</p>`;
+      let info;
+      try { info = JSON.parse(await grpRun(b, 'CompanionGroupDetail', [g.id, '500'])); }
+      catch (e) { d.innerHTML = `<h2>${esc(g.name)}</h2><p class="warn">${esc(e.message)}</p>`; return; }
+      if (section !== 'groups' || ui.groupSel !== g.id) return;
+      const roles = info.roles || [], titles = info.titles || [], members = info.members || [];
+      const roleName = id => (roles.find(r => r.id === id) || {}).name || '?';
+      const roleOpts = (list, sel) => list.map(r => `<option value="${esc(r.id)}" ${r.id === sel ? 'selected' : ''}>${esc(r.name)}${r.title ? ' – “' + esc(r.title) + '”' : ''}</option>`).join('');
+      const curTitle = (titles.find(t => t.selected) || {}).role;
+      d.innerHTML = `<h2>${esc(g.name)} <span class="muted small mono sel">${esc(g.id)}</span></h2>
+        <div class="row ${titles.length ? '' : 'hidden'}"><label>Bot's title</label><select class="in" id="grpTitle">${titles.map(t => `<option value="${esc(t.role)}" ${t.role === curTitle ? 'selected' : ''}>${esc(t.title || '(no title)')}</option>`).join('')}</select>
+          <span class="muted small">${g.active ? 'shown over the bot' : 'shows while this group is active'}</span></div>
+        ${g.canInvite ? `<div class="row"><label>Invite</label><div class="combo" style="max-width:300px"><input class="in" id="grpInvWho" placeholder="Avatar name or key"><button class="dd" id="grpInvDd" title="Choose">▾</button></div>
+          <select class="in" id="grpInvRole">${roleOpts(roles, '00000000-0000-0000-0000-000000000000')}</select><button class="btn" id="grpInv">Send invitation</button></div>` : '<p class="muted small">The bot may not invite people to this group.</p>'}
+        <div class="row"><label>Group chat</label><input class="in w" id="grpChat" placeholder="Message to the group chat as ${esc(b.botName || b.label)} – Enter sends"><button class="btn" id="grpChatSend">Send</button></div>
+        ${g.canNotice ? `<details style="margin:6px 0"><summary>Send a group notice</summary>
+          <div class="row"><label>Subject</label><input class="in w" id="grpNotSub" maxlength="63"></div>
+          <div class="row"><label>Text</label><textarea class="in" id="grpNotText" maxlength="500" rows="3"></textarea></div>
+          <div class="actions"><button class="btn" id="grpNotSend">Send notice</button></div></details>` : ''}
+        <h3 style="margin-top:12px">Members <span class="muted small">${members.length}${info.memberCount > members.length ? ' of ' + info.memberCount + ' (online first)' : ''}</span></h3>
+        ${members.length ? '' : '<p class="muted small">Second Life sent no member list for this group – very large groups and groups that hide their members do that. Invite, title and notices still work.</p>'}
+        <div class="row" style="align-items:center"><input class="in" id="grpMemQ" placeholder="Filter members (name, title, role)" style="max-width:300px" value="${esc(ui.grpMemQ || '')}">
+          <label class="switch small"><input type="checkbox" id="grpMemOn" ${ui.grpMemOn === '1' ? 'checked' : ''}><span class="tr"></span>Online only</label></div>
+        <table class="tbl radar"><thead><tr><th>Name</th><th>Title</th><th>Roles</th><th>Last online</th><th></th></tr></thead><tbody id="grpMem"></tbody></table>`;
+      const drawMem = () => {
+        const q = ($('#grpMemQ').value || '').toLowerCase(), on = $('#grpMemOn').checked;
+        const list = members.filter(m => (!on || m.online === 'Online') && (!q || [m.name, m.title, ...m.roles.map(roleName)].join(' ').toLowerCase().includes(q)));
+        $('#grpMem').innerHTML = list.map(m => `<tr data-m="${esc(m.id)}"><td><b>${esc(m.name || m.id)}</b>${m.owner ? ' <span class="muted small">owner</span>' : ''}</td><td>${esc(m.title || '')}</td>
+          <td class="small">${esc(m.roles.map(roleName).filter(n => n !== 'Everyone').join(', '))}</td><td class="small ${m.online === 'Online' ? 'ok' : 'muted'}">${esc(m.online || '')}</td>
+          <td><button class="btn sm" data-mm title="Actions">⋯</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Nobody matches.</td></tr>';
+      };
+      drawMem();
+      $('#grpMemQ').oninput = () => { saveUi('grpMemQ', $('#grpMemQ').value); drawMem(); };
+      $('#grpMemOn').onchange = e => { saveUi('grpMemOn', e.target.checked ? '1' : ''); drawMem(); };
+      clearable('#grpMemQ');
+      $('#grpTitle').onchange = e => doAct(g.id, 'title', '', e.target.value, 'Title changed');
+      const sendChat = async () => {
+        const t = $('#grpChat').value.trim(); if (!t) return;
+        try { await grpRun(b, 'Groupchat', [g.id, t]); $('#grpChat').value = ''; toast('Sent to the group chat'); } catch (er) { fail(er); }
+      };
+      $('#grpChatSend').onclick = sendChat;
+      $('#grpChat').onkeydown = e => { if (e.key === 'Enter') sendChat(); };
+      if (g.canInvite) {
+        $('#grpInvDd').onclick = e => avatarMenu(e.currentTarget, n => { $('#grpInvWho').value = n; });
+        $('#grpInv').onclick = () => {
+          const who = $('#grpInvWho').value.trim(); if (!who) { toast('Type or choose an avatar first', 'bad'); return; }
+          const role = $('#grpInvRole').value;
+          doAct(g.id, 'invite', who, role === '00000000-0000-0000-0000-000000000000' ? 'none' : role, 'Invitation sent to ' + who);
+        };
+      }
+      if (g.canNotice) $('#grpNotSend').onclick = async () => {
+        const sub = $('#grpNotSub').value.trim(), txt = $('#grpNotText').value.trim();
+        if (!sub || !txt) { toast('Write a subject and a text', 'bad'); return; }
+        try { await grpRun(b, 'CompanionGroupNotice', [g.id, sub, txt]); toast('Notice sent to ' + g.name); $('#grpNotSub').value = ''; $('#grpNotText').value = ''; } catch (er) { fail(er); }
+      };
+      $('#grpMem').onclick = e => {
+        const btn = e.target.closest('[data-mm]') || e.target.closest('[data-m]'); if (!btn) return;
+        const m = members.find(x => x.id === btn.closest('[data-m]').dataset.m); if (!m) return;
+        const name = m.name || m.id;
+        const others = roles.filter(r => r.id !== '00000000-0000-0000-0000-000000000000');
+        const items = [{ hd: name },
+          { t: '💬 Send an IM', f: () => { pendingIm = { id: m.id, name }; section = 'chat'; navPush(); renderMain(); } },
+          { t: '👤 Open their profile', f: () => rpc('openUrl', 'https://world.secondlife.com/resident/' + m.id).catch(fail) },
+          { t: '📋 Copy key', f: () => rpc('copy', m.id).then(() => toast('Copied')) }];
+        if (g.canRoles) {
+          const give = others.filter(r => !m.roles.includes(r.id));
+          if (give.length) { items.push({ hd: 'Give a role' }); give.forEach(r => items.push({ t: '＋ ' + r.name, f: async () => { if (await doAct(g.id, 'addrole', m.id, r.id, name + ' got the role ' + r.name)) { m.roles.push(r.id); drawMem(); } } })); }
+        }
+        if (g.canRemoveRoles) {
+          const take = others.filter(r => m.roles.includes(r.id));
+          if (take.length) { items.push({ hd: 'Take a role away' }); take.forEach(r => items.push({ t: '− ' + r.name, f: async () => { if (await doAct(g.id, 'removerole', m.id, r.id, name + ' no longer has the role ' + r.name)) { m.roles = m.roles.filter(x => x !== r.id); drawMem(); } } })); }
+        }
+        if (g.canEject && !m.owner) items.push({ t: '⛔ Eject from the group…', f: () => confirmDlg('Eject ' + name + '?', name + ' is removed from ' + g.name + '.', 'Eject', async () => { if (await doAct(g.id, 'eject', m.id, '', name + ' was ejected')) { members.splice(members.indexOf(m), 1); drawMem(); } }) });
+        showMenu(btn, items);
+      };
+    };
+    load();
+  }
+
   function renderCommands(b) {
     const c = $('#content');
     c.className = 'content full';
@@ -861,6 +1076,7 @@
       $('#cmdItems').innerHTML = html || '<div class="cmdi muted">Nothing found</div>';
     };
     $('#cmdSearch').oninput = () => { saveUi('cmdSearch', $('#cmdSearch').value); drawList(); };
+    clearable('#cmdSearch');
     $('#cmdAll').onchange = () => { saveUi('cmdAll', $('#cmdAll').checked); drawList(); };
     $('#cmdItems').onclick = e => { const x = e.target.closest('[data-c]'); if (!x) return; selCmd = x.dataset.c; drawList(); drawForm(); };
     drawList();
@@ -954,6 +1170,7 @@
       } catch { }
     };
     $('#logFilter').oninput = () => { saveUi('logFilter', $('#logFilter').value); draw(); };
+    clearable('#logFilter');
     $('#logErr').onchange = () => { saveUi('logErr', $('#logErr').checked); draw(); };
     $('#logFollow').onchange = () => { saveUi('logFollow', $('#logFollow').checked); draw(); };
     $('#logCopy').onclick = () => rpc('copy', draw().map(l => l.t + ' ' + l.x).join('\n')).then(() => toast('Copied'));
@@ -1233,12 +1450,17 @@
       <p>New HUD versions can come from GitHub without a new AvieBoter: the daily check (Settings → Updates) also looks for a newer HUD that works with your version. The bots then hand it out, and a worn HUD updates itself the next time it talks to a bot in the same region – Update HUD makes it ask at once.</p>
       <h3>Radar, comings and goings</h3>
       <p>📡 Radar lists the avatars around the bot (its region and the neighbouring ones), nearest first; ⋯ on a name offers an IM, going to them, following them, offering them a teleport, their profile and more. Below it, "Comings and goings" lists arrivals and departures in the bot's region, HUDs worn and taken off, and people starting to use the bot. With "Save comings and goings to files" switched on (off by default, per bot) they are also written to daily files (📂 Files, one JSON object per line: t, type, uuid, name, region, extra, bot) for other tools. The watching itself sends nothing to the grid: it uses the positions Second Life sends every viewer anyway.</p>
+      <p>Click a column header to sort (again to reverse): name, age (from the profile, as viewers' radars show it – under 30 days in amber), distance or place. 💬 marks avatars within 20 m, who read the bot's local chat; "In chat range" lists only them, "New only" only avatars under the age you choose. Ages are asked from Second Life a few at a time while the Radar is open. "Alert me about new avatars" (off by default) pops up a Windows notice when such an avatar is in the bot's region, also with the Radar closed – the bot then asks for the age of each avatar arriving there.</p>
       <h3>Following and getting to you</h3>
       <p>HUD → Follow ▸ makes the bot follow you at a place you choose (Closer/Farther, behind, beside, in front – remembered). Blocked by walls, it teleports next to you; if teleports do not get it to you, it sends you a teleport request – click Offer Teleport. "Come to me" and "Sit with me" walk when you are close, else teleport; when a parcel's landing point or a telehub reroutes the teleport, the bot walks the rest, and if it still cannot reach you it sends you a teleport request – click Offer Teleport in it and the bot accepts.</p>
       <h3>Finding your way back</h3>
       <p>◀ and ▶ at the top left (or Alt+← / Alt+→, or the mouse's back and forward buttons) go back and forward through the places you opened, like a web browser; 🕘 lists them all.</p>
       <p>"Sit with me": sit on a vehicle first, then choose it – the bot teleports next to you and sits on a free seat. "Come to me" only teleports it beside you.</p>
       <p>Answers come back to the HUD's own web address in Second Life, so nothing on this PC is opened to the internet. The bot's control port listens only on this PC (127.0.0.1).</p>
+      <h3>Groups</h3>
+      <p>👥 Groups lists the bot's groups like a viewer's Groups window: ★ the active group (its tag shows over the bot), Activate or No active group, Notices and In profile switches, Leave…, and Join group with the key of an open group. "Members and more ▸" opens a group: the bot's title, Invite (with a role), group chat, a group notice, and the members (online first, filter, Online only) with ⋯ for an IM, the profile, giving or taking a role, or Eject. Buttons appear only where the bot's role in that group allows it. Group invitations to the bot wait under "Invitations" (with a Windows notice) until you Accept or Decline them.</p>
+      <h3>Undeform</h3>
+      <p>Overview → Undeform helps when an outfit change left the bot deformed: it stops every animation the bot plays and sends its appearance again, so viewers redraw it. While the bot sits it keeps its seat's animations (only the appearance is sent again) – stand it up first for a full undeform. A viewer that still shows it deformed keeps an old skeleton in memory: there, right-click the bot → Reset skeleton.</p>
       <h3>Commands</h3>
       <p>⌘ Commands lists everything SecondBot can do (about 190 commands), with a form for each. Money, Discord and service commands are switched off in this app; "Show all modules" lists them anyway.</p>
       <h3>Log</h3>

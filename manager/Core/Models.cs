@@ -57,6 +57,7 @@ public class BotProfile
     public List<string> RecentOutfits { get; set; } = new();
     public bool SaveEvents { get; set; } = false;     // write comings and goings to daily files (off: only the list in the app)
     public bool AutoUpdateHud { get; set; } = true;   // HUDs made by the bot update themselves when the app has a newer one
+    public int YoungAlertDays { get; set; } = 0;      // popup when an avatar younger than this is in the bot's region (0 = off)
 }
 
 public class Seat

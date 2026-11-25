@@ -862,6 +862,50 @@
  },
  {
   "module": "CompanionBuild",
+  "name": "CompanionHudCheck",
+  "type": "Do",
+  "about": "The HUD asks for an update check: the app looks for a newer HUD first, then the bot answers like CompanionHudHello",
+  "params": [
+   "version",
+   "updater",
+   "replyto"
+  ],
+  "argHints": [
+   [
+    "version",
+    "the HUD's version",
+    "Text"
+   ],
+   [
+    "updater",
+    "key of the HUD's updater prim, or none",
+    "Text"
+   ],
+   [
+    "replyto",
+    "the HUD's reply address",
+    "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
+  "name": "CompanionHudCheckDone",
+  "type": "Do",
+  "about": "The app has looked for a newer HUD (after CompanionHudCheck); the bot now answers the HUD",
+  "params": [
+   "note"
+  ],
+  "argHints": [
+   [
+    "note",
+    "what the app found (for the log)",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
   "name": "CompanionDebugSince",
   "type": "Get",
   "about": "Script errors and debug messages seen nearby (debug channel), after the given number",
@@ -875,6 +919,158 @@
     "Number"
    ]
   ]
+ },
+ {
+  "module": "CompanionGroups",
+  "name": "CompanionGroupList",
+  "type": "Get",
+  "about": "The bot's groups: name, key, active, own powers, notices and profile settings",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionGroups",
+  "name": "CompanionGroupDetail",
+  "type": "Get",
+  "about": "Roles, titles and members of one of the bot's groups (members with names, at most 'max')",
+  "params": [
+   "group",
+   "max"
+  ],
+  "argHints": [
+   [
+    "group",
+    "group key",
+    "UUID"
+   ],
+   [
+    "max",
+    "most members to list (names are looked up)",
+    "Number",
+    "500"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionGroups",
+  "name": "CompanionGroupDo",
+  "type": "Do",
+  "about": "Group actions: activate, none (no active group), title, notices on/off, profile on/off, invite, eject, addrole, removerole, join, leave",
+  "params": [
+   "group",
+   "action",
+   "avatar",
+   "role"
+  ],
+  "argHints": [
+   [
+    "group",
+    "group key",
+    "UUID"
+   ],
+   [
+    "action",
+    "what to do",
+    "Text",
+    "activate"
+   ],
+   [
+    "avatar",
+    "avatar key or name (invite, eject, roles), or on/off",
+    "Text",
+    "none"
+   ],
+   [
+    "role",
+    "role key (title, invite, roles) or none",
+    "Text",
+    "none"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionGroups",
+  "name": "CompanionGroupNotice",
+  "type": "Do",
+  "about": "Sends a notice to one of the bot's groups",
+  "params": [
+   "group",
+   "subject",
+   "message"
+  ],
+  "argHints": [
+   [
+    "group",
+    "group key",
+    "UUID"
+   ],
+   [
+    "subject",
+    "the notice's subject",
+    "Text"
+   ],
+   [
+    "message",
+    "the notice's text",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionGroups",
+  "name": "CompanionGroupInvites",
+  "type": "Get",
+  "about": "Group invitations the bot received and has not answered yet",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionGroups",
+  "name": "CompanionGroupInviteAnswer",
+  "type": "Do",
+  "about": "Accepts or declines a group invitation the bot received",
+  "params": [
+   "group",
+   "answer"
+  ],
+  "argHints": [
+   [
+    "group",
+    "group key from CompanionGroupInvites",
+    "UUID"
+   ],
+   [
+    "answer",
+    "accept or decline",
+    "Text",
+    "accept"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionGroups",
+  "name": "CompanionYoungAlert",
+  "type": "Do",
+  "about": "Alerts (event 'young') when an avatar younger than this many days is in the bot's region; 0 = off",
+  "params": [
+   "days"
+  ],
+  "argHints": [
+   [
+    "days",
+    "age in days, 0 = off",
+    "Number",
+    "30"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionGroups",
+  "name": "CompanionUndeform",
+  "type": "Do",
+  "about": "Undeform: stops every animation the bot plays (not while it sits) and sends its appearance again (rebakes), so viewers redraw it",
+  "params": [],
+  "argHints": []
  },
  {
   "module": "CompanionPeople",
@@ -1062,6 +1258,46 @@
     "replyto",
     "none or the HUD reply address",
     "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPeople",
+  "name": "CompanionImHere",
+  "type": "Do",
+  "about": "The HUD says where its wearer is after a region change; a bot following them teleports there when it lost them",
+  "params": [
+   "cornerx",
+   "cornery",
+   "x",
+   "y",
+   "z"
+  ],
+  "argHints": [
+   [
+    "cornerx",
+    "the region's corner x (metres on the grid)",
+    "Number"
+   ],
+   [
+    "cornery",
+    "the region's corner y",
+    "Number"
+   ],
+   [
+    "x",
+    "position in the region",
+    "Number"
+   ],
+   [
+    "y",
+    "position in the region",
+    "Number"
+   ],
+   [
+    "z",
+    "position in the region",
+    "Number"
    ]
   ]
  },

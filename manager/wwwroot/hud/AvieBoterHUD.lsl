@@ -1,4 +1,4 @@
-// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.1.5 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
+// AvieBoter HUD - core script (name "SL Bot HUD"), version 1.4.0 (talks to the bot). Its partner "SL Bot HUD menu" draws the menus and the look.
 // YOU wear this HUD (on your own avatar, not on the bot). It controls the bot avatar that runs in AvieBoter.
 // Easiest: in AvieBoter, tab "HUD", press "Send me a new HUD" - the bot builds it, paired, and gives it to you.
 // A HUD made that way updates itself when the app has a newer one (its ring prim holds the updater).
@@ -6,7 +6,7 @@
 // then paste the pairing line from AvieBoter into local chat:  /7 pair SLB1|<bot key>|<secret>|<bot name>
 // Commands go to the bot as signed instant messages; answers come back to this HUD's own web address.
 
-string  VERSION = "1.1.5";
+string  VERSION = "1.4.0";
 integer PAIR_CHANNEL = 7;
 integer UPDATE_PIN = 7710422;     // must match the updater script
 integer helloSent = FALSE;
@@ -19,6 +19,8 @@ string  lastStatus = "not asked yet";
 key     inviteBot = NULL_KEY;     // a pairing invitation this HUD answered (pairwith): which bot, which code
 string  inviteCode = "";
 integer quietStatus = FALSE;     // a status asked for the menu only (no chat)
+integer followBot = -1;          // the bot told to follow (it hears where we went after a teleport)
+integer moved = FALSE;
 integer checkBot = -1;           // Update HUD: the bot asked (the menu chose one in this region); -1 = none
 
 // ---------- stored bots (linkset data, shared with the menu script) ----------
@@ -54,9 +56,9 @@ requestUrl()
     urlRequest = llRequestSecureURL();     // https: pairing lines travel to this address
 }
 
-string replyTarget()
+string replyTarget()      // "/c": bots of AvieBoter 1.4+ answer in plain text with a small status (spares memory)
 {
-    if (myUrl != "") return myUrl;
+    if (myUrl != "") return myUrl + "/c";
     return (string)owner;        // fallback: the bot answers by IM
 }
 
@@ -79,7 +81,7 @@ sendTo(integer n, string cmd, list args)     // to the n-th paired bot
     string joined = llDumpList2String(args, "~#~");
     string unix = (string)llGetUnixTime();
     string sig = llSHA1String(cmd + joined + unix + llList2String(bots(), n * 3 + 1));
-    if (cmd != "CompanionHudHello") ui("ring", "busy");
+    if (cmd != "CompanionHudHello" && cmd != "CompanionImHere") ui("ring", "busy");
     string msg = cmd;
     if (llGetListLength(args) > 0) msg += "|||" + joined;
     msg += "#|#" + replyTarget() + "@@@" + sig + ";|;" + unix;
@@ -96,19 +98,19 @@ integer updaterLink()      // only updater 2 can take both HUD scripts
     return 0;
 }
 
-helloTo(integer n)     // tells bot n this HUD's version; an older HUD gets updated by that bot
+helloTo(integer n, string cmd)     // tells bot n this HUD's version; an older HUD gets updated by that bot
 {
     string upd = "none";
     integer u = updaterLink();
     if (u) upd = (string)llGetLinkKey(u);
-    sendTo(n, "CompanionHudHello", [VERSION, upd, myUrl]);
+    sendTo(n, cmd, [VERSION, upd, replyTarget()]);
 }
 
 hello()
 {
     if (helloSent || botCount() == 0 || myUrl == "") return;
     helloSent = TRUE;
-    helloTo(activeIndex());
+    helloTo(activeIndex(), "CompanionHudHello");
 }
 
 // ---------- actions ----------
@@ -142,7 +144,7 @@ doAction(string a, list p)
     else if (a == "stand") { send("Stand", []); showText("standing"); ui("pose", "0"); }
     else if (a == "status") send("CompanionStatus", []);
     else if (a == "quietstatus") { quietStatus = TRUE; send("CompanionStatus", []); }
-    else if (a == "checkupdate") { checkBot = (integer)llList2String(p, 0); helloTo(checkBot); }
+    else if (a == "checkupdate") { checkBot = (integer)llList2String(p, 0); helloTo(checkBot, "CompanionHudCheck"); }
     else if (a == "fly") send("CompanionFly", [llList2String(p, 0), replyTarget()]);
     else if (a == "lure") { llOwnerSay(botLabel() + " sends you a teleport offer…"); send("CompanionTeleportMe", []); }
     else if (a == "gohome") { llOwnerSay(botLabel() + " is teleporting to its home location."); send("GoHome", []); showText("going home"); }
@@ -158,8 +160,8 @@ doAction(string a, list p)
         send("CompanionWear", [folder, replyTarget()]);
     }
     else if (a == "adjust") send("CompanionAdjust", [llList2String(p, 0), llList2String(p, 1), replyTarget()]);
-    else if (a == "follow") { showText("following you"); send("CompanionFollow", ["me", llList2String(p, 0), llList2String(p, 1), replyTarget()]); }
-    else if (a == "unfollow") { showText(""); send("CompanionFollow", ["stop", "0", "0", replyTarget()]); }
+    else if (a == "follow") { followBot = activeIndex(); showText("following you"); send("CompanionFollow", ["me", llList2String(p, 0), llList2String(p, 1), replyTarget()]); }
+    else if (a == "unfollow") { followBot = -1; showText(""); send("CompanionFollow", ["stop", "0", "0", replyTarget()]); }
     else if (a == "select")
     {
         llLinksetDataWrite("active", llList2String(p, 0));
@@ -257,49 +259,41 @@ pair(string code)
 }
 
 // ---------- replies ----------
-string formValue(string body, string name)
+string formValue(string body, string name)      // older bots answer as a web form
 {
-    list parts = llParseString2List(body, ["&"], []);
-    integer i;
-    for (i = 0; i < llGetListLength(parts); ++i)
-    {
-        string kv = llList2String(parts, i);
-        integer eq = llSubStringIndex(kv, "=");
-        if (eq > 0 && llGetSubString(kv, 0, eq - 1) == name)
-        {
-            string v = llGetSubString(kv, eq + 1, -1);
-            v = llDumpList2String(llParseStringKeepNulls(v, ["+"], []), " ");
-            return llUnescapeURL(v);
-        }
-    }
-    return "";
+    body = "&" + body + "&";
+    integer at = llSubStringIndex(body, "&" + name + "=");
+    if (at == -1) return "";
+    body = llGetSubString(body, at + llStringLength(name) + 2, -1);
+    body = llGetSubString(body, 0, llSubStringIndex(body, "&") - 1);
+    return llUnescapeURL(llDumpList2String(llParseStringKeepNulls(body, ["+"], []), " "));
 }
 
 string describeStatus(string st)
 {
-    // st = CompanionStatus json object
-    if (llJsonGetValue(st, ["online"]) != JSON_TRUE) return "offline";
-    string hl = llJsonGetValue(st, ["hudLatest"]);
-    if (hl != JSON_INVALID && hl != "") llLinksetDataWrite("newest", hl);      // shown in HUD settings
-    // the menu's Stand / Fly ON / Fly OFF button follows the bot: 2 seated, 1 flying, 0 standing
-    if (llJsonGetValue(st, ["sitting"]) == JSON_TRUE) ui("pose", "2");
-    else if (llJsonGetValue(st, ["flying"]) == JSON_TRUE) ui("pose", "1");
-    else ui("pose", "0");
-    string s = "online in " + llJsonGetValue(st, ["region"]) + " <" + llJsonGetValue(st, ["x"]) + ", " + llJsonGetValue(st, ["y"]) + ", " + llJsonGetValue(st, ["z"]) + ">";
-    if (llJsonGetValue(st, ["sitting"]) == JSON_TRUE)
+    // the small status of AvieBoter 1.4+: o online, t text, p pose (2 seated, 1 flying, 0 standing), n newest HUD
+    if (llJsonGetValue(st, ["o"]) != "1")
     {
-        string seat = llJsonGetValue(st, ["seatName"]);
-        if (seat == "" || seat == JSON_INVALID) seat = "something";
-        s += ", sitting on " + seat;
+        if (llJsonGetValue(st, ["online"]) == JSON_TRUE) return "online in " + llJsonGetValue(st, ["region"]);   // an older bot
+        return "offline";
     }
-    else if (llJsonGetValue(st, ["flying"]) == JSON_TRUE) s += ", flying";
-    return s;
+    string n = llJsonGetValue(st, ["n"]);
+    if (n != JSON_INVALID && n != "") llLinksetDataWrite("newest", n);      // shown in HUD settings
+    ui("pose", llJsonGetValue(st, ["p"]));      // the menu's Stand / Fly ON / Fly OFF button follows the bot
+    return llJsonGetValue(st, ["t"]);
 }
 
 handleReply(string command, string reply)
 {
     string cmd = llJsonGetValue(reply, ["command"]);
     if (cmd == JSON_INVALID) cmd = command;
+    if (cmd == "CompanionImHere") return;
+    if (cmd == "CompanionHudCheck")     // the app looks on GitHub first; an older bot does not know this: plain hello
+    {
+        ui("ring", "");
+        if (llJsonGetValue(reply, ["status"]) == JSON_FALSE) helloTo(checkBot, "CompanionHudHello");
+        return;
+    }
     if (cmd == "CompanionHudUpdate")
     {
         string res = llJsonGetValue(reply, ["result"]);
@@ -318,12 +312,10 @@ handleReply(string command, string reply)
         string action = llJsonGetValue(info, ["action"]);
         string latest = llJsonGetValue(info, ["latest"]);
         if (latest != JSON_INVALID && latest != "") llLinksetDataWrite("newest", latest);
+        string say = llJsonGetValue(info, ["s"]);      // the bot words it
         string who = botLabel();
         if (checkBot != -1) who = labelAt(checkBot);
-        if (action == "updating") llOwnerSay(who + " brings HUD " + latest + "…");
-        else if (action == "manual") llOwnerSay("Newer HUD " + latest + ": this one cannot update itself – press \"Send me a new HUD\" in AvieBoter.");
-        else if (action == "off") llOwnerSay(who + " has HUD " + latest + ", but HUD updates are off for it in AvieBoter.");
-        else if (checkBot != -1) llOwnerSay("HUD " + VERSION + " is up to date.");
+        if (say != JSON_INVALID && say != "") llOwnerSay(who + " " + say);
         if (action != "updating") checkBot = -1;
         return;
     }
@@ -395,6 +387,7 @@ default
     changed(integer c)
     {
         if (c & CHANGED_OWNER) { llLinksetDataReset(); llResetScript(); }
+        if (c & (CHANGED_REGION | CHANGED_TELEPORT)) moved = TRUE;
         if (c & (CHANGED_REGION | CHANGED_TELEPORT | CHANGED_REGION_START)) requestUrl();
     }
 
@@ -424,17 +417,32 @@ default
         if (id == urlRequest)
         {
             urlRequest = NULL_KEY;
-            if (method == URL_REQUEST_GRANTED) { myUrl = body; hello(); }
+            if (method == URL_REQUEST_GRANTED)
+            {
+                myUrl = body;
+                hello();
+                if (moved && followBot != -1 && followBot < botCount()) sendTo(followBot, "CompanionImHere", here());
+                moved = FALSE;
+            }
             else { myUrl = ""; llOwnerSay("No web address for replies here (answers will come as IMs)."); }
             return;
         }
         if (method == "POST")
         {
-            string cmd = formValue(body, "command");
-            if (cmd == "CompanionAddBots") { llHTTPResponse(id, 200, addBots(formValue(body, "reply"))); return; }
-            if (cmd == "CompanionPairing") { llHTTPResponse(id, 200, pairByCode(formValue(body, "reply"))); return; }
+            string cmd;
+            string rep;
+            if (llGetSubString(body, 0, 1) == "c|")       // AvieBoter 1.4+: "c|<command>\n<reply>"
+            {
+                integer nl = llSubStringIndex(body, "\n");
+                cmd = llGetSubString(body, 2, nl - 1);
+                rep = llDeleteSubString(body, 0, nl);
+            }
+            else { cmd = formValue(body, "command"); rep = formValue(body, "reply"); }
+            body = "";
+            if (cmd == "CompanionAddBots") { llHTTPResponse(id, 200, addBots(rep)); return; }
+            if (cmd == "CompanionPairing") { llHTTPResponse(id, 200, pairByCode(rep)); return; }
             llHTTPResponse(id, 200, "ok");
-            handleReply(cmd, formValue(body, "reply"));
+            handleReply(cmd, rep);
             return;
         }
         llHTTPResponse(id, 405, "");

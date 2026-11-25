@@ -160,6 +160,7 @@ public class BotRunner
         psi.Environment["SLBM_HUD_UPDATER"] = HudFile("AvieBoterHUDUpdater.lsl");
         psi.Environment["SLBM_HUD_MENU"] = HudFile("AvieBoterHUDMenu.lsl");
         psi.Environment["SLBM_HUD_AUTOUPDATE"] = Profile.AutoUpdateHud ? "1" : "0";
+        psi.Environment["SLBM_YOUNG_DAYS"] = Profile.YoungAlertDays.ToString();
         psi.Environment["SLBM_BOT_LABEL"] = Profile.Label;
         psi.Environment["SLBM_PEOPLE"] = PeopleCsv();
 
@@ -341,6 +342,7 @@ public class BotRunner
         long seq = o["seq"]?.GetValue<long>() ?? 0;
         if (seq < botEventSeq) { botEventSeq = 0; return; }   // bot program restarted
         var lines = new StringBuilder();
+        bool hudCheck = false;
         foreach (var it in o["items"] as JsonArray ?? new JsonArray())
         {
             if (it is not JsonObject i) continue;
@@ -357,10 +359,17 @@ public class BotRunner
                 ["extra"] = i["extra"]?.ToString() ?? "",
                 ["bot"] = Profile.Label
             };
+            string ty = e["type"]!.ToString();
+            if (ty == "hud-check") hudCheck = true;
+            else if (ty == "young" && Profile.YoungAlertDays > 0)
+                owner.RaiseAlert(this, "New avatar near " + Profile.Label, e["name"] + " (" + e["extra"] + " in Second Life) is in " + e["region"] + ".");
+            else if (ty == "group-invite")
+                owner.RaiseAlert(this, Profile.Label + " got a group invitation", e["extra"] + " – answer it under 👥 Groups.");
             lock (events) { events.Add(e); if (events.Count > 500) events.RemoveRange(0, 100); }
             lines.Append(e.ToJsonString()).Append(Environment.NewLine);
         }
         if (seq > botEventSeq) botEventSeq = seq;
+        if (hudCheck) _ = CheckHudFor();
         if (lines.Length == 0 || !Profile.SaveEvents) return;      // files only when switched on (Radar)
         try
         {
@@ -368,6 +377,32 @@ public class BotRunner
             File.AppendAllText(Path.Combine(dir, $"events-{DateTime.Now:yyyy-MM-dd}.jsonl"), lines.ToString());
         }
         catch { }
+    }
+
+    /// <summary>Update HUD pressed in a worn HUD: look on GitHub for a newer HUD now (at most once a minute), then the
+    /// bot answers the HUD with the newest one it has (CompanionHudCheckDone).</summary>
+    static DateTime lastHudCheck = DateTime.MinValue;
+    static readonly SemaphoreSlim hudCheckGate = new(1, 1);
+    async Task CheckHudFor()
+    {
+        string note;
+        await hudCheckGate.WaitAsync();
+        try
+        {
+            if (DateTime.Now - lastHudCheck < TimeSpan.FromMinutes(1)) note = "checked less than a minute ago";
+            else
+            {
+                lastHudCheck = DateTime.Now;
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                var v = await HudScripts.CheckAsync(cts.Token);
+                note = v != null ? "HUD " + v + " taken from GitHub" : "no newer HUD on GitHub";
+            }
+        }
+        catch (Exception e) { note = "GitHub check failed: " + e.Message; Log.Info("HUD check for " + Profile.Label + ": " + e.Message); }
+        finally { hudCheckGate.Release(); }
+        AddLog("Manager: Update HUD from the worn HUD - " + note, "app");
+        await RunCommand("CompanionHudCheckDone", new[] { note.Replace("|", "/").Replace("~", "-").Replace("@", "-").Replace("#", "") });
+        owner.Notify();
     }
 
     public List<JsonObject> RecentEvents(int n) { lock (events) return events.TakeLast(n).Reverse().ToList(); }

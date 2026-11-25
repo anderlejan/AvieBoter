@@ -110,6 +110,78 @@ integer lookOk()
     return TRUE;
 }
 
+// ---------- saved look: Reset look puts back exactly what was saved (while worn) ----------
+string snap(integer link, list q)     // q: pairs of PRIM_* code and face (-1 = no face)
+{
+    string out = "";
+    integer i;
+    for (i = 0; i < llGetListLength(q); i += 2)
+    {
+        integer code = llList2Integer(q, i);
+        integer side = llList2Integer(q, i + 1);
+        list ask = [code];
+        if (side >= 0) ask += [side];
+        list v = llGetLinkPrimitiveParams(link, ask);
+        string c = (string)code + "~" + (string)side;
+        integer j;
+        for (j = 0; j < llGetListLength(v); ++j)
+        {
+            integer t = llGetListEntryType(v, j);
+            c += "~" + llGetSubString("?ifskvr", t, t) + llList2String(v, j);
+        }
+        out += c + "\n";
+    }
+    return out;
+}
+
+list unsnap(string s)
+{
+    list out = [];
+    list chunks = llParseString2List(s, ["\n"], []);
+    integer i;
+    for (i = 0; i < llGetListLength(chunks); ++i)
+    {
+        list p = llParseStringKeepNulls(llList2String(chunks, i), ["~"], []);
+        out += [(integer)llList2String(p, 0)];
+        if ((integer)llList2String(p, 1) >= 0) out += [ALL_SIDES];
+        integer j;
+        for (j = 2; j < llGetListLength(p); ++j)
+        {
+            string e = llList2String(p, j);
+            string t = llGetSubString(e, 0, 0);
+            e = llDeleteSubString(e, 0, 0);
+            if (t == "i") out += [(integer)e];
+            else if (t == "f") out += [(float)e];
+            else if (t == "v") out += [(vector)e];
+            else if (t == "r") out += [(rotation)e];
+            else if (t == "k") out += [(key)e];
+            else out += [e];
+        }
+    }
+    return out;
+}
+
+saveLook()
+{
+    if (!llGetAttached()) return;     // rotations are only right while worn
+    string s = snap(LINK_ROOT, [PRIM_TYPE, -1, PRIM_SIZE, -1, PRIM_ROT_LOCAL, -1, PRIM_TEXTURE, 0, PRIM_COLOR, 0,
+        PRIM_FULLBRIGHT, 0, PRIM_BUMP_SHINY, 0, PRIM_GLOW, 0]) + "|";
+    integer r = ringLink();
+    if (r) s += snap(r, [PRIM_TYPE, -1, PRIM_SIZE, -1, PRIM_POS_LOCAL, -1, PRIM_ROT_LOCAL, -1, PRIM_TEXTURE, 0, PRIM_FULLBRIGHT, 0]);
+    llLinksetDataWrite("lookv", s);
+}
+
+resetLook()
+{
+    list p = llParseStringKeepNulls(llLinksetDataRead("lookv"), ["|"], []);
+    if (llGetListLength(p) < 2) { llOwnerSay("No saved look yet: wear the HUD, then Settings ▸ Save look."); return; }
+    llSetLinkPrimitiveParamsFast(LINK_ROOT, unsnap(llList2String(p, 0)));
+    integer r = ringLink();
+    if (r && llList2String(p, 1) != "") llSetLinkPrimitiveParamsFast(r, unsnap(llList2String(p, 1)));
+    ringState("");
+    llOwnerSay("The HUD looks as saved again.");
+}
+
 resize(float f)
 {
     if (f < llGetMinScaleFactor() || f > llGetMaxScaleFactor())
@@ -118,6 +190,7 @@ resize(float f)
         return;
     }
     llScaleByFactor(f);
+    saveLook();      // the new size is the one Reset look keeps
 }
 
 integer textOn() { return llLinksetDataRead("text") != "0"; }
@@ -265,10 +338,11 @@ settingsMenu()
     else if (verNum(nw) > verNum(v)) line += " – a newer HUD " + nw + " is ready: press Update HUD.";
     else line += " – the newest.";
     line += "\nFree memory: " + llLinksetDataRead("memcore") + " KB core, " + (string)(llGetFreeMemory() / 1024) + " KB menu.";
-    dialog("settings", "\nHUD settings\n\n" + line + "\n\nSize: Smaller / Bigger (or stretch the HUD in Edit).\nColour: the ring's colour when the bot is ready.\nText: the floating text above the HUD.\nUpdate HUD: a bot in this region brings the newest HUD.",
+    dialog("settings", "\nHUD settings\n\n" + line + "\n\nSize: Smaller / Bigger (or stretch the HUD in Edit).\nColour: the ring's colour when the bot is ready.\nText: the floating text above the HUD.\nReset look: back to the saved look (Save look keeps the HUD as it is now).\nUpdate HUD: a bot in this region brings the newest HUD.",
         ["◀ Menu", "Help", "Unpair…",
          "Reset look", "Colour ▸", t,
-         "Smaller", "Bigger", "Update HUD"]);
+         "Smaller", "Bigger", "Update HUD",
+         "Save look"]);
 }
 
 confirm(string action, string question)
@@ -291,14 +365,15 @@ default
     state_entry()
     {
         owner = llGetOwner();
-        if (!lookOk()) applyLook(TRUE); else ringState("");     // self-healing: any reset brings the design back
+        if (!lookOk()) applyLook(TRUE); else ringState("");     // self-healing: a HUD made by hand gets the design
+        if (llLinksetDataRead("lookv") == "") saveLook();
         showText();
         llMessageLinked(LINK_THIS, 0, "slbm-ui|ask", NULL_KEY);
     }
 
     on_rez(integer p) { if (llGetOwner() != owner) llResetScript(); }
 
-    attach(key id) { if (id) { if (!lookOk()) applyLook(TRUE); } }     // LSL: a key is tested on its own
+    attach(key id) { if (id) { if (!lookOk()) applyLook(TRUE); if (llLinksetDataRead("lookv") == "") saveLook(); } }     // LSL: a key is tested on its own
 
     changed(integer c)
     {
@@ -443,7 +518,8 @@ default
             else if (msg == "Bigger") resize(1.0 / 0.85);
             else if (msg == "Hide text") { llLinksetDataWrite("text", "0"); showText(); }
             else if (msg == "Show text") { llLinksetDataWrite("text", "1"); showText(); }
-            else if (msg == "Reset look") applyLook(TRUE);
+            else if (msg == "Reset look") resetLook();
+            else if (msg == "Save look") { saveLook(); llOwnerSay("Look saved: Reset look brings it back."); }
             else if (msg == "Colour ▸")
             {
                 dialog("colour", "\nRing colour:", ["◀ Back"] + llList2ListStrided(ACCENTS, 0, -1, 2));

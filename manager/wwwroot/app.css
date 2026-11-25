@@ -222,3 +222,14 @@ select.in { padding-right: 26px; appearance: none; background-image: linear-grad
 /* people of a bot */
 .people { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; max-width: 620px; }
 .prow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--bg2, rgba(127,127,127,.08)); }
+
+/* search and filter fields with a clear button */
+.clr { position: relative; display: inline-flex; flex: 1; min-width: 160px; }
+.clr.w { min-width: 180px; }
+.clr > .in { flex: 1; width: 100%; padding-right: 28px; }
+.clr > .x { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: var(--fg2); cursor: pointer; padding: 1px 6px; border-radius: 5px; line-height: 1.4; }
+.clr > .x:hover { background: var(--bg4); color: var(--fg); }
+.clr > .x.hidden { display: none; }
+.tbl th.sortable { cursor: pointer; user-select: none; }
+.tbl th.sortable:hover { color: var(--fg); }
+.chatr { font-size: .9em; }

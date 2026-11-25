@@ -1,9 +1,9 @@
 diff --git a/SecondBotEvents/Commands/Companion.cs b/SecondBotEvents/Commands/Companion.cs
 new file mode 100644
-index 0000000..6a27f92
+index 0000000..18b8d05
 --- /dev/null
 +++ b/SecondBotEvents/Commands/Companion.cs
-@@ -0,0 +1,845 @@
+@@ -0,0 +1,868 @@
 +// AvieBoter patch: commands for a companion / passenger bot driven by an in-world HUD.
 +// Long actions run in the background and report to a reply target (the HUD's HTTP-in URL),
 +// so the IM handler that received the command is never blocked.
@@ -65,6 +65,27 @@ index 0000000..6a27f92
 +                following = CompanionPeople.FollowInfo,
 +                note
 +            };
++        }
++
++        /// <summary>The bot's state for HUDs 1.4+ (small, so the HUD's memory is spared): o online 1/0, t the text the HUD
++        /// shows, p pose (2 seated, 1 flying, 0 standing), n the newest HUD version.</summary>
++        public string CompactStatusJson()
++        {
++            var c = GetClient();
++            if (c?.Network == null || !c.Network.Connected || c.Network.CurrentSim == null) return "{\"o\":0}";
++            Vector3 p = c.Self.SimPosition;
++            uint seat = c.Self.SittingOn;
++            var inv = System.Globalization.CultureInfo.InvariantCulture;
++            string t = "online in " + c.Network.CurrentSim.Name + " <" + Math.Round(p.X).ToString(inv) + ", " + Math.Round(p.Y).ToString(inv) + ", " + Math.Round(p.Z).ToString(inv) + ">";
++            int pose = 0;
++            if (seat != 0)
++            {
++                pose = 2;
++                string seatName = c.Network.CurrentSim.ObjectsPrimitives.TryGetValue(seat, out Primitive prim) ? prim.Properties?.Name ?? "" : "";
++                t += ", sitting on " + (seatName == "" ? "something" : seatName);
++            }
++            else if (c.Self.Movement.Fly) { pose = 1; t += ", flying"; }
++            return System.Text.Json.JsonSerializer.Serialize(new { o = 1, t, p = pose, n = CompanionBuild.LatestHudVersion() }, JsonOptions.UnsafeRelaxed);
 +        }
 +
 +        [About("Returns the bot's state for the app and the HUD: online, name, uuid, region, position, seat")]
@@ -161,7 +182,9 @@ index 0000000..6a27f92
 +            {
 +                return;
 +            }
-+            string json = System.Text.Json.JsonSerializer.Serialize(new { command, result, status = StatusObject() });
++            string json = replyto.EndsWith("/c")        // a HUD 1.4+: the small status
++                ? "{\"command\":" + System.Text.Json.JsonSerializer.Serialize(command, JsonOptions.UnsafeRelaxed) + ",\"result\":" + System.Text.Json.JsonSerializer.Serialize(result, JsonOptions.UnsafeRelaxed) + ",\"status\":" + CompactStatusJson() + "}"
++                : System.Text.Json.JsonSerializer.Serialize(new { command, result, status = StatusObject() });
 +            master.CommandsService.SmartCommandReply(replyto, json, command);
 +        }
 +
@@ -851,10 +874,10 @@ index 0000000..6a27f92
 +}
 diff --git a/SecondBotEvents/Commands/CompanionBuild.cs b/SecondBotEvents/Commands/CompanionBuild.cs
 new file mode 100644
-index 0000000..967d3ec
+index 0000000..6fdb400
 --- /dev/null
 +++ b/SecondBotEvents/Commands/CompanionBuild.cs
-@@ -0,0 +1,565 @@
+@@ -0,0 +1,632 @@
 +// AvieBoter patch: building helpers so the app can make and update the HUD in-world
 +// (rez a box, put scripts into objects, link, wear, take, give) and see script errors.
 +using OpenMetaverse;
@@ -871,7 +894,7 @@ index 0000000..967d3ec
 +    [ClassInfo("Building helpers used by the AvieBoter app (HUD making and updates)")]
 +    public class CompanionBuild(EventsSecondBot setmaster) : CommandsAPI(setmaster)
 +    {
-+        static string J(object o) => System.Text.Json.JsonSerializer.Serialize(o);
++        static string J(object o) => System.Text.Json.JsonSerializer.Serialize(o, JsonOptions.UnsafeRelaxed);   // plain UTF-8 text for HUDs
 +
 +        [About("Rezzes a 0.5 m box in front of the bot, names it and returns its ids")]
 +        [ReturnHints("json {localId, uuid}")]
@@ -1336,18 +1359,25 @@ index 0000000..967d3ec
 +        [CmdTypeDo()]
 +        public object CompanionHudHello(string version, string updater, string replyto)
 +        {
-+            string latest = LatestHudVersion();
 +            LastHudVersion = version ?? "";
 +            CompanionEvents.Add("hud", CompanionAccess.LastCaller, CompanionAccess.LastCallerName, GetClient().Network.CurrentSim?.Name, version);
 +            LastHudSeen = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-+            var c = GetClient();
++            string action = HelloAction(version, updater, replyto, out string latest);
++            return BasicReply(J(new { latest, action, s = HelloSay(action, version, latest, false) }), [version, updater]);
++        }
++
++        /// <summary>Compares the HUD's version with the app's HUD and, when it is older, starts updating it.</summary>
++        string HelloAction(string version, string updater, string replyto, out string latest, bool asked = false)
++        {
++            latest = LatestHudVersion();
++            string latestV = latest;
 +            string action = "current";
 +            if (Older(version, latest))
 +            {
 +                bool auto = AutoUpdateOverride ?? Environment.GetEnvironmentVariable("SLBM_HUD_AUTOUPDATE") != "0";
 +                if (!UUID.TryParse(updater ?? "", out UUID _)) action = "manual";      // a HUD without updater prim (or updater 1)
 +                else if (Version.TryParse(version ?? "", out var hv) && hv < new Version(0, 6, 0)) action = "manual";   // before 0.6 only one script could be updated
-+                else if (!auto) action = "off";
++                else if (!auto && !asked) action = "off";      // Update HUD pressed in the HUD works even with automatic updates off
 +                else if (string.IsNullOrEmpty(replyto) || replyto == "none" || !replyto.StartsWith("http")) action = "manual";
 +                else
 +                {
@@ -1371,12 +1401,72 @@ index 0000000..967d3ec
 +                            catch (Exception e) { r = "error: " + e.Message; }
 +                            finally { hudBusy = 0; }
 +                        }
-+                        LogFormater.Info("[Companion] HUD update " + version + " -> " + latest + ": " + r);
++                        LogFormater.Info("[Companion] HUD update " + version + " -> " + latestV + ": " + r);
 +                        new Companion(master).Reply(replyto, "CompanionHudUpdate", r);
 +                    });
 +                }
 +            }
-+            return BasicReply(J(new { latest, action }), [version, updater]);
++            return action;
++        }
++
++        /// <summary>What a HUD 1.4+ says after its hello (older HUDs make up their own texts).</summary>
++        static string HelloSay(string action, string version, string latest, bool asked) => action switch
++        {
++            "updating" => "brings HUD " + latest + "…",
++            "manual" => "has HUD " + latest + ", but this HUD cannot update itself – press \"Send me a new HUD\" in AvieBoter.",
++            "off" => "has HUD " + latest + ", but HUD updates are off for it in AvieBoter.",
++            _ => asked ? "HUD " + version + " is the newest." : ""
++        };
++
++        // Update HUD pressed in the HUD: the app first looks on GitHub for a newer HUD (it reads the bot's events), then
++        // answers with CompanionHudCheckDone; without an answer in 40 s the bot goes on with the HUD it has.
++        static (string version, string updater, string replyto)? hudCheck;
++        static readonly object hudCheckGate = new();
++        static Timer hudCheckTimer;
++
++        [About("The HUD asks for an update check: the app looks for a newer HUD first, then the bot answers like CompanionHudHello")]
++        [ReturnHints("checking")]
++        [ArgHints("version", "the HUD's version", "Text")]
++        [ArgHints("updater", "key of the HUD's updater prim, or none", "Text")]
++        [ArgHints("replyto", "the HUD's reply address", "SMART")]
++        [CmdTypeDo()]
++        public object CompanionHudCheck(string version, string updater, string replyto)
++        {
++            LastHudVersion = version ?? "";
++            LastHudSeen = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
++            lock (hudCheckGate) hudCheck = (version ?? "", updater ?? "", replyto ?? "");
++            CompanionEvents.Add("hud-check", CompanionAccess.LastCaller, CompanionAccess.LastCallerName, GetClient().Network.CurrentSim?.Name, version);
++            var self = this;
++            hudCheckTimer ??= new Timer(_ => self.FinishHudCheck("no answer from the app"), null, Timeout.Infinite, Timeout.Infinite);
++            hudCheckTimer.Change(40000, Timeout.Infinite);
++            LogFormater.Info("[Companion] HUD " + version + " asks for an update check - asking the app to look for a newer HUD");
++            return BasicReply("checking", [version, updater]);
++        }
++
++        [About("The app has looked for a newer HUD (after CompanionHudCheck); the bot now answers the HUD")]
++        [ReturnHints("done or nothing to do")]
++        [ArgHints("note", "what the app found (for the log)", "Text")]
++        [CmdTypeDo()]
++        public object CompanionHudCheckDone(string note)
++        {
++            return BasicReply(FinishHudCheck(note) ? "done" : "nothing to do");
++        }
++
++        bool FinishHudCheck(string note)
++        {
++            (string version, string updater, string replyto) p;
++            lock (hudCheckGate)
++            {
++                if (hudCheck == null) return false;
++                p = hudCheck.Value;
++                hudCheck = null;
++            }
++            hudCheckTimer?.Change(Timeout.Infinite, Timeout.Infinite);
++            string action = HelloAction(p.version, p.updater, p.replyto, out string latest, true);
++            LogFormater.Info("[Companion] HUD update check (" + note + "): HUD " + p.version + ", newest " + latest + " - " + action);
++            if (!string.IsNullOrEmpty(p.replyto) && p.replyto != "none")
++                master.CommandsService.SmartCommandReply(p.replyto, J(new { command = "CompanionHudHello", reply = new { latest, action, s = HelloSay(action, p.version, latest, true) } }), "CompanionHudHello");
++            return true;
 +        }
 +
 +        [About("Script errors and debug messages seen nearby (debug channel), after the given number")]
@@ -1420,12 +1510,359 @@ index 0000000..967d3ec
 +        }
 +    }
 +}
+diff --git a/SecondBotEvents/Commands/CompanionGroups.cs b/SecondBotEvents/Commands/CompanionGroups.cs
+new file mode 100644
+index 0000000..a696b23
+--- /dev/null
++++ b/SecondBotEvents/Commands/CompanionGroups.cs
+@@ -0,0 +1,341 @@
++// AvieBoter patch: the bot's groups for the app's Groups section (list, roles and titles, members, and the actions a
++// group member can take: activate, title, notices, invite, eject, roles, notice, join, leave), plus Undeform.
++using OpenMetaverse;
++using SecondBotEvents.Services;
++using System;
++using System.Collections.Concurrent;
++using System.Collections.Generic;
++using System.Linq;
++using System.Threading;
++
++namespace SecondBotEvents.Commands
++{
++    [ClassInfo("Groups for the AvieBoter app's Groups section")]
++    public class CompanionGroups(EventsSecondBot setmaster) : CommandsAPI(setmaster)
++    {
++        static string J(object o) => System.Text.Json.JsonSerializer.Serialize(o);
++
++        /// <summary>Asks the grid and waits for the matching event (or the timeout); returns what the event gave.</summary>
++        static T Ask<T>(Action<EventHandler<T>> add, Action<EventHandler<T>> remove, Action request, Func<T, bool> mine, int ms = 10000) where T : EventArgs
++        {
++            T got = null;
++            using var done = new ManualResetEventSlim(false);
++            EventHandler<T> h = (s, e) => { if (mine(e)) { got = e; done.Set(); } };
++            add(h);
++            try { request(); done.Wait(ms); }
++            finally { remove(h); }
++            return got;
++        }
++
++        static bool Has(GroupPowers p, GroupPowers want) => (p & want) == want;
++
++        Dictionary<UUID, Group> CurrentGroups(GridClient c)
++        {
++            var e = Ask<CurrentGroupsEventArgs>(h => c.Groups.CurrentGroups += h, h => c.Groups.CurrentGroups -= h,
++                () => c.Groups.RequestCurrentGroups(), _ => true);
++            return e?.Groups ?? new Dictionary<UUID, Group>();
++        }
++
++        [About("The bot's groups: name, key, active, own powers, notices and profile settings")]
++        [ReturnHints("json [{id, name, active, ...}]")]
++        [CmdTypeGet()]
++        public object CompanionGroupList()
++        {
++            var c = GetClient();
++            var groups = CurrentGroups(c);
++            var active = c.Self.ActiveGroup;
++            var list = groups.Values.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase).Select(g => new
++            {
++                id = g.ID.ToString(), name = g.Name, active = g.ID == active, notices = g.AcceptNotices, profile = g.ListInProfile,
++                insignia = g.InsigniaID.ToString(),
++                canInvite = Has(g.Powers, GroupPowers.Invite), canEject = Has(g.Powers, GroupPowers.Eject),
++                canNotice = Has(g.Powers, GroupPowers.SendNotices),
++                canRoles = Has(g.Powers, GroupPowers.AssignMember) || Has(g.Powers, GroupPowers.AssignMemberLimited),
++                canRemoveRoles = Has(g.Powers, GroupPowers.RemoveMember)
++            }).ToList();
++            return BasicReply(J(new { active = active.ToString(), groups = list }));
++        }
++
++        [About("Roles, titles and members of one of the bot's groups (members with names, at most 'max')")]
++        [ReturnHints("json {roles, titles, members, memberCount}")]
++        [ArgHints("group", "group key", "UUID")]
++        [ArgHints("max", "most members to list (names are looked up)", "Number", "500")]
++        [CmdTypeGet()]
++        public object CompanionGroupDetail(string group, string max)
++        {
++            if (!UUID.TryParse(group, out UUID g)) return Failure("bad group key", [group]);
++            if (!int.TryParse(max, out int most) || most <= 0) most = 500;
++            var c = GetClient();
++            UUID req = UUID.Zero;
++            var roles = Ask<GroupRolesDataReplyEventArgs>(h => c.Groups.GroupRoleDataReply += h, h => c.Groups.GroupRoleDataReply -= h,
++                () => req = c.Groups.RequestGroupRoles(g), e => e.GroupID == g);
++            var titles = Ask<GroupTitlesReplyEventArgs>(h => c.Groups.GroupTitlesReply += h, h => c.Groups.GroupTitlesReply -= h,
++                () => c.Groups.RequestGroupTitles(g), e => e.GroupID == g);
++            var members = Ask<GroupMembersReplyEventArgs>(h => c.Groups.GroupMembersReply += h, h => c.Groups.GroupMembersReply -= h,
++                () => c.Groups.RequestGroupMembers(g), e => e.GroupID == g, 20000);
++            var rm = Ask<GroupRolesMembersReplyEventArgs>(h => c.Groups.GroupRoleMembersReply += h, h => c.Groups.GroupRoleMembersReply -= h,
++                () => c.Groups.RequestGroupRolesMembers(g), e => e.GroupID == g, 15000);
++            if (roles == null && members == null) return Failure("no answer from the grid about this group", [group]);
++            var byMember = new Dictionary<UUID, List<string>>();
++            foreach (var kv in rm?.RolesMembers ?? new List<KeyValuePair<UUID, UUID>>())
++            {
++                if (!byMember.TryGetValue(kv.Value, out var l)) byMember[kv.Value] = l = new List<string>();
++                l.Add(kv.Key.ToString());
++            }
++            var all = (members?.Members.Values ?? Enumerable.Empty<GroupMember>())
++                .OrderBy(m => m.OnlineStatus == "Online" ? 0 : 1).ThenBy(m => m.OnlineStatus).Take(most).ToList();
++            var ids = all.Select(m => m.ID).ToList();
++            foreach (var chunk in ids.Where(i => CompanionNames.Get(null, i) == "").Chunk(80)) { CompanionNames.Hook(c); c.Avatars.RequestAvatarNames(chunk.ToList()); }
++            DateTime until = DateTime.Now.AddSeconds(8);
++            while (DateTime.Now < until && ids.Any(i => CompanionNames.Get(null, i) == "")) Thread.Sleep(200);
++            return BasicReply(J(new
++            {
++                memberCount = members?.Members.Count ?? 0,
++                roles = (roles?.Roles.Values ?? Enumerable.Empty<GroupRole>()).OrderBy(r => r.ID == UUID.Zero ? 0 : 1).ThenBy(r => r.Name)
++                    .Select(r => new { id = r.ID.ToString(), name = r.ID == UUID.Zero ? "Everyone" : r.Name, title = r.Title, description = r.Description }),
++                titles = (titles?.Titles.Values ?? Enumerable.Empty<GroupTitle>()).Select(t => new { role = t.RoleID.ToString(), title = t.Title, selected = t.Selected }),
++                members = all.Select(m => new
++                {
++                    id = m.ID.ToString(), name = CompanionNames.Get(null, m.ID), title = m.Title, online = m.OnlineStatus, owner = m.IsOwner,
++                    roles = byMember.TryGetValue(m.ID, out var l) ? l : new List<string>()
++                })
++            }));
++        }
++
++        [About("Group actions: activate, none (no active group), title, notices on/off, profile on/off, invite, eject, addrole, removerole, join, leave")]
++        [ReturnHints("result text")]
++        [ArgHints("group", "group key", "UUID")]
++        [ArgHints("action", "what to do", "Text", "activate")]
++        [ArgHints("avatar", "avatar key or name (invite, eject, roles), or on/off", "Text", "none")]
++        [ArgHints("role", "role key (title, invite, roles) or none", "Text", "none")]
++        [CmdTypeDo()]
++        public object CompanionGroupDo(string group, string action, string avatar, string role)
++        {
++            var c = GetClient();
++            UUID.TryParse(group ?? "", out UUID g);
++            UUID.TryParse(role ?? "", out UUID r);
++            string a = (action ?? "").Trim().ToLowerInvariant();
++            if (a == "none") { c.Groups.ActivateGroup(UUID.Zero); return BasicReply("no active group"); }
++            if (g == UUID.Zero) return Failure("bad group key", [group]);
++            if (a == "join")
++            {
++                var e = Ask<GroupOperationEventArgs>(h => c.Groups.GroupJoinedReply += h, h => c.Groups.GroupJoinedReply -= h,
++                    () => c.Groups.RequestJoinGroup(g), x => x.GroupID == g);
++                if (e == null) return Failure("no answer – is the group open to join?", [group]);
++                return e.Success ? BasicReply("joined") : Failure("could not join (closed group, fee, or too many groups?)", [group]);
++            }
++            var groups = CurrentGroups(c);
++            if (!groups.TryGetValue(g, out Group gr)) return Failure("the bot is not in this group", [group]);
++            UUID who = UUID.Zero;
++            if (a is "invite" or "eject" or "addrole" or "removerole")
++            {
++                if (!UUID.TryParse(avatar ?? "", out who)) who = CompanionNames.Find(c, avatar ?? "", 10000);
++                if (who == UUID.Zero) return Failure("avatar not found", [avatar]);
++            }
++            switch (a)
++            {
++                case "activate": c.Groups.ActivateGroup(g); return BasicReply("active group: " + gr.Name);
++                case "title": c.Groups.ActivateTitle(g, r); return BasicReply("title changed");
++                case "notices": c.Groups.SetGroupAcceptNotices(g, avatar == "on", gr.ListInProfile); return BasicReply("notices " + (avatar == "on" ? "on" : "off"));
++                case "profile": c.Groups.SetGroupAcceptNotices(g, gr.AcceptNotices, avatar == "on"); return BasicReply("in profile " + (avatar == "on" ? "on" : "off"));
++                case "invite":
++                    if (!Has(gr.Powers, GroupPowers.Invite)) return Failure("the bot may not invite in this group");
++                    c.Groups.Invite(g, r == UUID.Zero ? new List<UUID> { UUID.Zero } : new List<UUID> { UUID.Zero, r }, who);
++                    LogFormater.Info("[Companion] invited " + who + " to the group " + gr.Name);
++                    return BasicReply("invitation sent");
++                case "eject":
++                    if (!Has(gr.Powers, GroupPowers.Eject)) return Failure("the bot may not eject in this group");
++                    var ej = Ask<GroupOperationEventArgs>(h => c.Groups.GroupMemberEjected += h, h => c.Groups.GroupMemberEjected -= h,
++                        () => c.Groups.EjectUser(g, who), x => x.GroupID == g);
++                    if (ej != null && !ej.Success) return Failure("the grid refused the eject (owners cannot be ejected)");
++                    return BasicReply("ejected");
++                case "addrole":
++                    if (r == UUID.Zero) return Failure("choose a role");
++                    c.Groups.AddToRole(g, r, who); return BasicReply("role given");
++                case "removerole":
++                    if (r == UUID.Zero) return Failure("choose a role");
++                    c.Groups.RemoveFromRole(g, r, who); return BasicReply("role taken away");
++                case "leave":
++                    var lv = Ask<GroupOperationEventArgs>(h => c.Groups.GroupLeaveReply += h, h => c.Groups.GroupLeaveReply -= h,
++                        () => c.Groups.LeaveGroup(g), x => x.GroupID == g);
++                    if (lv != null && !lv.Success) return Failure("could not leave (the last owner cannot leave)");
++                    return BasicReply("left " + gr.Name);
++            }
++            return Failure("unknown action", [action]);
++        }
++
++        [About("Sends a notice to one of the bot's groups")]
++        [ReturnHints("sent")]
++        [ArgHints("group", "group key", "UUID")]
++        [ArgHints("subject", "the notice's subject", "Text")]
++        [ArgHints("message", "the notice's text", "Text")]
++        [CmdTypeDo()]
++        public object CompanionGroupNotice(string group, string subject, string message)
++        {
++            if (!UUID.TryParse(group, out UUID g)) return Failure("bad group key", [group]);
++            if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(message)) return Failure("subject and text needed");
++            var c = GetClient();
++            c.Groups.SendGroupNotice(g, new GroupNotice { Subject = subject, Message = message, OwnerID = c.Self.AgentID, AttachmentID = UUID.Zero });
++            return BasicReply("sent");
++        }
++
++        [About("Group invitations the bot received and has not answered yet")]
++        [ReturnHints("json [{group, session, from, message, t}]")]
++        [CmdTypeGet()]
++        public object CompanionGroupInvites()
++        {
++            return BasicReply(J(CompanionGroupInvitations.List().Select(i => new { group = i.Group.ToString(), session = i.Session.ToString(), from = i.From, message = i.Message, t = i.At })));
++        }
++
++        [About("Accepts or declines a group invitation the bot received")]
++        [ReturnHints("accepted or declined")]
++        [ArgHints("group", "group key from CompanionGroupInvites", "UUID")]
++        [ArgHints("answer", "accept or decline", "Text", "accept")]
++        [CmdTypeDo()]
++        public object CompanionGroupInviteAnswer(string group, string answer)
++        {
++            if (!UUID.TryParse(group, out UUID g)) return Failure("bad group key", [group]);
++            var inv = CompanionGroupInvitations.Take(g);
++            if (inv == null) return Failure("no open invitation for this group", [group]);
++            bool yes = (answer ?? "").Trim().ToLowerInvariant() == "accept";
++            GetClient().Self.GroupInviteRespond(g, inv.Session, yes);
++            LogFormater.Info("[Companion] group invitation " + (yes ? "accepted" : "declined") + ": " + inv.Message);
++            return BasicReply(yes ? "accepted" : "declined");
++        }
++
++        [About("Alerts (event 'young') when an avatar younger than this many days is in the bot's region; 0 = off")]
++        [ReturnHints("ok")]
++        [ArgHints("days", "age in days, 0 = off", "Number", "30")]
++        [CmdTypeDo()]
++        public object CompanionYoungAlert(string days)
++        {
++            int.TryParse(days, out int d);
++            CompanionAges.YoungDays = Math.Max(0, d);
++            var c = GetClient();
++            var sim = c?.Network?.CurrentSim;
++            if (CompanionAges.YoungDays > 0 && sim != null)      // switched on: also the avatars already here
++                foreach (var id in sim.AvatarPositions.Keys.Where(k => k != c.Self.AgentID).Take(40)) CompanionAges.Arrived(c, id, CompanionNames.Get(null, id), sim.Name);
++            return BasicReply(CompanionAges.YoungDays > 0 ? "alert under " + CompanionAges.YoungDays + " days" : "off");
++        }
++
++        [About("Undeform: stops every animation the bot plays (not while it sits) and sends its appearance again (rebakes), so viewers redraw it")]
++        [ReturnHints("result text")]
++        [CmdTypeDo()]
++        public object CompanionUndeform()
++        {
++            var c = GetClient();
++            const string tip = " – a viewer that still shows it deformed: right-click the bot → Reset skeleton";
++            if (c.Self.SittingOn != 0)
++            {
++                // a passenger keeps its seat's animations (stopping them would leave it standing on the seat)
++                c.Appearance.RequestSetAppearance(true);
++                LogFormater.Info("[Companion] undeform (seated): appearance sent again, animations kept");
++                return BasicReply("the bot sits, so its seat's animations were kept; appearance sent again (stand it up first for a full undeform)" + tip);
++            }
++            var anims = c.Self.SignaledAnimations.Copy().Keys.ToList();
++            foreach (var a in anims) c.Self.AnimationStop(a, true);
++            c.Self.AnimationStart(Animations.STAND, true); Thread.Sleep(300); c.Self.AnimationStop(Animations.STAND, true);
++            c.Appearance.RequestSetAppearance(true);
++            LogFormater.Info("[Companion] undeform: stopped " + anims.Count + " animations, appearance sent again");
++            return BasicReply("stopped " + anims.Count + " animations and sent the appearance again" + tip);
++        }
++    }
++
++    /// <summary>Born dates of avatars on the radar (profile data, as viewers' radars show the age). Asked a few at a
++    /// time while the Radar is open, each avatar once.</summary>
++    public static class CompanionAges
++    {
++        static readonly ConcurrentDictionary<UUID, string> born = new();
++        static readonly ConcurrentDictionary<UUID, DateTime> asked = new();
++        static GridClient hooked;
++        public static int YoungDays = int.TryParse(Environment.GetEnvironmentVariable("SLBM_YOUNG_DAYS"), out int yd) ? yd : 0;
++        static readonly ConcurrentDictionary<UUID, (string name, string region)> toCheck = new();
++        static readonly ConcurrentDictionary<UUID, DateTime> alerted = new();
++
++        public static int? Days(string bornOn) =>
++            DateTime.TryParseExact(bornOn ?? "", "M/d/yyyy", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime b)
++                ? (int)(DateTime.UtcNow.Date - b.Date).TotalDays : null;
++
++        /// <summary>An avatar came into the bot's region: with the alert on, learn its age (from the profile) and
++        /// raise event "young" when it is younger than YoungDays (once a day per avatar).</summary>
++        public static void Arrived(GridClient c, UUID id, string name, string region)
++        {
++            if (YoungDays <= 0 || c == null) return;
++            if (born.TryGetValue(id, out string b)) { Judge(id, name, region, b); return; }
++            toCheck[id] = (name, region);
++            Born(c, id);
++        }
++
++        static void Judge(UUID id, string name, string region, string b)
++        {
++            int? d = Days(b);
++            if (d == null || d >= YoungDays) return;
++            if (alerted.TryGetValue(id, out DateTime t) && DateTime.Now - t < TimeSpan.FromHours(20)) return;
++            alerted[id] = DateTime.Now;
++            CompanionEvents.Add("young", id, name, region, d + (d == 1 ? " day" : " days"));
++        }
++
++        /// <summary>Asks again for avatars still waiting for their age (a few at a time); called with the radar.</summary>
++        public static void Tick(GridClient c)
++        {
++            if (YoungDays <= 0 || c == null) { toCheck.Clear(); return; }
++            foreach (var kv in toCheck.ToArray())
++            {
++                if (born.TryGetValue(kv.Key, out string b)) { toCheck.TryRemove(kv.Key, out _); Judge(kv.Key, kv.Value.name, kv.Value.region, b); }
++                else Born(c, kv.Key);
++            }
++        }
++
++        public static string Born(GridClient c, UUID id)
++        {
++            if (born.TryGetValue(id, out string b)) return b;
++            if (c == null) return "";
++            if (hooked != c)
++            {
++                hooked = c;
++                c.Avatars.AvatarPropertiesReply += (s, e) =>
++                {
++                    if (string.IsNullOrEmpty(e.Properties.BornOn)) return;
++                    born[e.AvatarID] = e.Properties.BornOn;
++                    if (toCheck.TryRemove(e.AvatarID, out var w)) Judge(e.AvatarID, w.name == "" ? CompanionNames.Get(null, e.AvatarID) : w.name, w.region, e.Properties.BornOn);
++                };
++            }
++            if (asked.Count(kv => DateTime.Now - kv.Value < TimeSpan.FromSeconds(3)) < 5
++                && (!asked.TryGetValue(id, out DateTime t) || DateTime.Now - t > TimeSpan.FromMinutes(10)))
++            {
++                asked[id] = DateTime.Now;
++                c.Avatars.RequestAvatarProperties(id);
++            }
++            return "";
++        }
++    }
++}
++
++namespace SecondBotEvents.Commands
++{
++    /// <summary>Group invitations wait here for an answer from the app (AvieBoter does not let SecondBot decline them
++    /// at once any more when it does not accept them by itself).</summary>
++    public static class CompanionGroupInvitations
++    {
++        public class Invite { public UUID Group; public UUID Session; public string From = ""; public string Message = ""; public long At; }
++        static readonly ConcurrentDictionary<UUID, Invite> open = new();
++        static GridClient hooked;
++
++        public static void Hook(GridClient c)
++        {
++            if (c == null || hooked == c) return;
++            hooked = c;
++            c.Self.IM += (s, e) =>
++            {
++                if (e.IM.Dialog != InstantMessageDialog.GroupInvitation) return;
++                var inv = new Invite { Group = e.IM.FromAgentID, Session = e.IM.IMSessionID, From = e.IM.FromAgentName ?? "", Message = e.IM.Message ?? "", At = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
++                open[inv.Group] = inv;
++                LogFormater.Info("[Companion] group invitation waits for an answer in the app: " + inv.Message);
++                CompanionEvents.Add("group-invite", inv.Group, inv.From, c.Network.CurrentSim?.Name ?? "", inv.Message.Length > 200 ? inv.Message[..200] : inv.Message);
++            };
++        }
++
++        public static List<Invite> List() => open.Values.OrderByDescending(i => i.At).ToList();
++        public static Invite Take(UUID g) => open.TryRemove(g, out Invite i) ? i : null;
++    }
++}
 diff --git a/SecondBotEvents/Commands/CompanionPeople.cs b/SecondBotEvents/Commands/CompanionPeople.cs
 new file mode 100644
-index 0000000..45a1e37
+index 0000000..50fd06f
 --- /dev/null
 +++ b/SecondBotEvents/Commands/CompanionPeople.cs
-@@ -0,0 +1,677 @@
+@@ -0,0 +1,729 @@
 +// AvieBoter patch: sharing the bot (who may use it with a HUD), a log of who comes and goes, radar, following
 +// and walking (used when a teleport is rerouted to a landing point or refused).
 +using OpenMetaverse;
@@ -1737,9 +2174,16 @@ index 0000000..45a1e37
 +                    presentHandle = sim.Handle;
 +                    present = now;
 +                    CompanionEvents.Add("region", c.Self.AgentID, c.Self.Name, sim.Name, now.Count + " avatars here");
++                    foreach (var id in now.Take(40)) CompanionAges.Arrived(c, id, CompanionNames.Get(null, id), sim.Name);   // names from the cache only: no waiting here
 +                    return;
 +                }
-+                foreach (var id in now.Where(i => !present.Contains(i))) CompanionEvents.Add("arrive", id, CompanionNames.Get(c, id), sim.Name);
++                foreach (var id in now.Where(i => !present.Contains(i)))
++                {
++                    string n = CompanionNames.Get(c, id);
++                    CompanionEvents.Add("arrive", id, n, sim.Name);
++                    CompanionAges.Arrived(c, id, n, sim.Name);
++                }
++                CompanionAges.Tick(c);
 +                foreach (var id in present.Where(i => !now.Contains(i))) CompanionEvents.Add("leave", id, CompanionNames.Get(c, id), sim.Name);
 +                present = now;
 +            }
@@ -1758,7 +2202,7 @@ index 0000000..45a1e37
 +            {
 +                var g = CompanionRadarData.Global(a.Handle, a.Pos);
 +                double d = Math.Sqrt(Math.Pow(g.X - me.X, 2) + Math.Pow(g.Y - me.Y, 2) + (a.Precise ? Math.Pow(g.Z - me.Z, 2) : 0));
-+                return new { uuid = a.Id.ToString(), name = a.Name, region = a.Region, x = Math.Round(a.Pos.X), y = Math.Round(a.Pos.Y), z = Math.Round(a.Pos.Z), dist = Math.Round(d, 1), sitting = a.Sitting, precise = a.Precise };
++                return new { uuid = a.Id.ToString(), name = a.Name, region = a.Region, x = Math.Round(a.Pos.X), y = Math.Round(a.Pos.Y), z = Math.Round(a.Pos.Z), dist = Math.Round(d, 1), sitting = a.Sitting, precise = a.Precise, born = CompanionAges.Born(c, a.Id) };
 +            }).OrderBy(a => a.dist).ToList();
 +            return BasicReply(J(list));
 +        }
@@ -1921,6 +2365,11 @@ index 0000000..45a1e37
 +        // teleports that did not bring the bot near: after two, it asks the target for a teleport offer (like Come to me)
 +        static int tpTries = 0;
 +        static DateTime askedAt = DateTime.MinValue, offerWaitUntil = DateTime.MinValue;
++        // where the target's HUD says they are after a region change (CompanionImHere) - for teleports beyond the radar
++        static ulong hintHandle = 0;
++        static Vector3 hintPos = Vector3.Zero;
++        static DateTime hintAt = DateTime.MinValue;
++        static int lostAsks = 0;
 +
 +        /// <summary>Teleports towards the target, or - after two teleports that did not help - asks the target for a
 +        /// teleport offer once and waits 90 s for it (offers from the bot's people are accepted automatically).</summary>
@@ -1992,7 +2441,7 @@ index 0000000..45a1e37
 +            followId = id;
 +            followName = CompanionNames.Get(c, id, 3000);
 +            if (followName == "") followName = id.ToString();
-+            lostSince = DateTime.MinValue;
++            lostSince = DateTime.MinValue; lostAsks = 0; hintAt = DateTime.MinValue;
 +            walking = false;                       // start afresh (a stuck walk from before must not block it)
 +            tpTries = 0; offerWaitUntil = DateTime.MinValue;
 +            movedAt = DateTime.Now; movedFrom = c.Self.SimPosition;
@@ -2023,11 +2472,30 @@ index 0000000..45a1e37
 +                var t = CompanionRadarData.Find(c, followId);
 +                if (t == null)
 +                {
-+                    if (lostSince == DateTime.MinValue) lostSince = DateTime.Now;
-+                    else if (DateTime.Now - lostSince > TimeSpan.FromMinutes(2)) { CompanionEvents.Add("follow-lost", followId, followName, sim.Name); StopFollow(c, "lost sight for 2 minutes"); }
++                    var now = DateTime.Now;
++                    if (lostSince == DateTime.MinValue) { lostSince = now; lostAsks = 0; }
++                    // the HUD told where they went (a teleport beyond the radar): go there
++                    if (hintAt != DateTime.MinValue && now - hintAt < TimeSpan.FromMinutes(2) && hintHandle != sim.Handle
++                        && now - lastTp > TimeSpan.FromSeconds(15) && now >= offerWaitUntil)
++                    {
++                        if (tpTries < 2) LogFormater.Info("[Companion] follow: " + followName + " went to another region - teleporting after them");
++                        TeleportOrAsk(c, hintHandle, hintPos, "went to another region");
++                        return;
++                    }
++                    // no word from the HUD (an older HUD, or none): ask them for a teleport offer, twice at most
++                    if (now - lostSince > TimeSpan.FromSeconds(20) && lostAsks < 2 && now >= offerWaitUntil && now - askedAt > TimeSpan.FromMinutes(2))
++                    {
++                        lostAsks++;
++                        askedAt = now;
++                        offerWaitUntil = now + TimeSpan.FromSeconds(90);
++                        LogFormater.Info("[Companion] follow: lost sight of " + followName + " - asking for a teleport offer");
++                        c.Self.SendTeleportLureRequest(followId, "I am following you but lost you. Please offer me a teleport - I accept it.");
++                    }
++                    if (now - lostSince > TimeSpan.FromMinutes(10)) { CompanionEvents.Add("follow-lost", followId, followName, sim.Name); StopFollow(c, "lost sight for 10 minutes"); }
 +                    return;
 +                }
 +                lostSince = DateTime.MinValue;
++                if (t.Handle == hintHandle) hintAt = DateTime.MinValue;   // seen where the HUD said: the hint is used up
 +                Vector3 fwd = Vector3.UnitX * t.Rot;
 +                double yaw = Math.Atan2(fwd.Y, fwd.X) + followAngle * Math.PI / 180.0;
 +                Vector3 goal = t.Pos + new Vector3((float)Math.Cos(yaw) * followDist, (float)Math.Sin(yaw) * followDist, 0f);
@@ -2078,6 +2546,27 @@ index 0000000..45a1e37
 +                }
 +            }
 +            catch (Exception e) { LogFormater.Warn("[Companion] follow: " + e.Message); }
++        }
++
++        [About("The HUD says where its wearer is after a region change; a bot following them teleports there when it lost them")]
++        [ReturnHints("ok or not following you")]
++        [ArgHints("cornerx", "the region's corner x (metres on the grid)", "Number")]
++        [ArgHints("cornery", "the region's corner y", "Number")]
++        [ArgHints("x", "position in the region", "Number")]
++        [ArgHints("y", "position in the region", "Number")]
++        [ArgHints("z", "position in the region", "Number")]
++        [CmdTypeDo()]
++        public object CompanionImHere(string cornerx, string cornery, string x, string y, string z)
++        {
++            if (followId == UUID.Zero || CompanionAccess.LastCaller != followId) return BasicReply("not following you");
++            var inv = System.Globalization.CultureInfo.InvariantCulture;
++            var ns = System.Globalization.NumberStyles.Float;
++            if (!uint.TryParse(cornerx, out uint cx) || !uint.TryParse(cornery, out uint cy)) return Failure("bad region corner");
++            float.TryParse(x, ns, inv, out float px); float.TryParse(y, ns, inv, out float py); float.TryParse(z, ns, inv, out float pz);
++            hintPos = new Vector3(Math.Max(px, 1f), Math.Max(py, 1f), Math.Max(pz, 0f));   // no upper clamp: OpenSim regions can be bigger
++            hintHandle = Utils.UIntsToLong(cx, cy);
++            hintAt = DateTime.Now;
++            return BasicReply("ok");
 +        }
 +
 +        [About("Goes to an avatar near the bot (walks if close, else teleports, then walks the rest)")]
@@ -2220,7 +2709,7 @@ index c0be957..acd252d 100644
              client.Network.LoggedOut += BotLoggedOut;
              client.Network.Disconnected += BotDisconnected;
 diff --git a/SecondBotEvents/Services/CommandsService.cs b/SecondBotEvents/Services/CommandsService.cs
-index a9d77f9..d1ae2a2 100644
+index a9d77f9..9ecb491 100644
 --- a/SecondBotEvents/Services/CommandsService.cs
 +++ b/SecondBotEvents/Services/CommandsService.cs
 @@ -141,7 +141,14 @@ namespace SecondBotEvents.Services
@@ -2248,6 +2737,35 @@ index a9d77f9..d1ae2a2 100644
              {
                  mode = "HTTP";
              }
+@@ -273,6 +280,28 @@ namespace SecondBotEvents.Services
+             {
+                 GetClient().Self.InstantMessage(target_avatar, output);
+             }
++            else if (mode == "HTTP" && target.EndsWith("/c"))
++            {
++                // AvieBoter HUD 1.4+ asks with "/c" after its address: plain text "c|<command>\n<reply>" (no form encoding,
++                // which made answers three times longer), without the echoed args, and a small status
++                string body = output;
++                try
++                {
++                    if (command == "CompanionStatus")
++                        body = "{\"command\":\"CompanionStatus\",\"reply\":" + System.Text.Json.JsonSerializer.Serialize(new SecondBotEvents.Commands.Companion(master).CompactStatusJson(), JsonOptions.UnsafeRelaxed) + ",\"status\":true}";
++                    else if (output.StartsWith("{") && JObject.Parse(output) is JObject jo && jo.Remove("args")) body = jo.ToString(Newtonsoft.Json.Formatting.None);
++                }
++                catch { body = output; }
++                try
++                {
++                    var content = new StringContent("c|" + command + "\n" + body, Encoding.UTF8, "text/plain");
++                    HTTPclient.PostAsync(target, content);
++                }
++                catch (Exception e)
++                {
++                    LogFormater.Crit("[SmartReply] HTTP failed: " + e.Message + "");
++                }
++            }
+             else if (mode == "HTTP")
+             {
+                 Dictionary<string, string> values = new()
 diff --git a/SecondBotEvents/Services/HttpService.cs b/SecondBotEvents/Services/HttpService.cs
 index 60b291a..c38602b 100644
 --- a/SecondBotEvents/Services/HttpService.cs
@@ -2312,8 +2830,28 @@ index 60b291a..c38602b 100644
          }
  
          protected string JsonInput(IHttpContext httpContext)
+diff --git a/SecondBotEvents/Services/InteractionService.cs b/SecondBotEvents/Services/InteractionService.cs
+index a4ae5c0..c8cb46b 100644
+--- a/SecondBotEvents/Services/InteractionService.cs
++++ b/SecondBotEvents/Services/InteractionService.cs
+@@ -319,11 +319,14 @@ namespace SecondBotEvents.Services
+ 
+         protected async void BotLoggedIn(object o, SimConnectedEventArgs e)
+         {
++            SecondBotEvents.Commands.CompanionGroupInvitations.Hook(GetClient());     // AvieBoter: before offline IMs arrive
+             await awaitstable();
+             GetClient().Network.SimConnected -= BotLoggedIn;
+             GetClient().Friends.FriendshipOffered += BotFriendRequested;
+             GetClient().Inventory.InventoryObjectOffered += BotInventoryOffer;
+-            GetClient().Groups.GroupInvitation += BotGroupInviteOffer;
++            // AvieBoter: without automatic accepting, leave invitations open (the app answers them) - LibreMetaverse
++            // declines every invitation at once as soon as anyone listens to this event
++            if (myConfig.GetAcceptGroupInvites()) GetClient().Groups.GroupInvitation += BotGroupInviteOffer;
+             GetClient().Inventory.Store.InventoryObjectAdded += BotInventoryAdd;
+             GetClient().Self.IM += BotTeleportOffer;
+             botConnected = true;
 diff --git a/SecondBotEvents/Static/http_commands_helper.cs b/SecondBotEvents/Static/http_commands_helper.cs
-index 3a257d5..f57122c 100644
+index 3a257d5..0454aee 100644
 --- a/SecondBotEvents/Static/http_commands_helper.cs
 +++ b/SecondBotEvents/Static/http_commands_helper.cs
 @@ -1,4 +1,4 @@
@@ -2322,13 +2860,14 @@ index 3a257d5..f57122c 100644
  using System;
  using System.Collections.Generic;
  using System.Text;
-@@ -14,6 +14,9 @@ namespace SecondBotEvents
+@@ -14,6 +14,10 @@ namespace SecondBotEvents
                  { "animation", typeof(AnimationCommands) },
                  { "avatars", typeof(Avatars) },
                  { "chat", typeof(Chat) },
 +                { "companion", typeof(SecondBotEvents.Commands.Companion) },
 +                { "companionbuild", typeof(SecondBotEvents.Commands.CompanionBuild) },
 +                { "companionpeople", typeof(SecondBotEvents.Commands.CompanionPeople) },
++                { "companiongroups", typeof(SecondBotEvents.Commands.CompanionGroups) },
                  { "core", typeof(Core) },
                  { "dialogs", typeof(Dialogs) },
                  { "discord", typeof(DiscordCommands) },

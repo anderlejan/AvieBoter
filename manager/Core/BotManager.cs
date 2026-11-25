@@ -11,6 +11,8 @@ public class BotManager
     public event Action? Changed;
     public event Action<BotRunner, List<ChatItem>>? ChatArrived;
     public void RaiseChat(BotRunner r, List<ChatItem> items) => ChatArrived?.Invoke(r, items);
+    public event Action<BotRunner, string, string>? Alert;      // a Windows popup (title, text)
+    public void RaiseAlert(BotRunner r, string title, string text) => Alert?.Invoke(r, title, text);
     DateTime lastNotify = DateTime.MinValue;
 
     public void Load()
