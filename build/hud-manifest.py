@@ -6,7 +6,7 @@ import hashlib, json, os, re, sys
 
 here = os.path.dirname(os.path.abspath(__file__))
 hud = os.path.join(here, '..', 'hud')
-files = ['AvieBoterHUD.lsl', 'AvieBoterHUDMenu.lsl', 'AvieBoterHUDUpdater.lsl']
+files = ['AvieBoterHUD.lsl', 'AvieBoterHUDMenu.lsl', 'AvieBoterHUDUpdater.lsl', 'AvieBoterHUDCam.lsl']
 path = os.path.join(hud, 'hud.json')
 
 

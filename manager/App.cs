@@ -12,6 +12,7 @@ public class App : Application
     public BotManager Bots { get; } = new();
     public SettingsStore Settings { get; } = new();
     MainWindow? main;
+    public MainWindow? MainWin => main;
     Notifier notifier = null!;
     public Tray? TrayIcon => tray;
     Tray? tray;
@@ -44,11 +45,27 @@ public class App : Application
             Settings.Data.ResumeBots.Clear(); Settings.Data.ResumeUntil = null; Settings.Save();
         }
         if (resume.Count > 0) Log.Info("Restarting bots after the update: " + resume.Count);
+        // not closed properly last time (crash, killed, power cut): the bots that were meant to be online come back
+        var crashed = new List<string>();
+        try
+        {
+            if (File.Exists(RunningFlag)) crashed = Bots.All.Where(r => r.Profile.WantOnline).Select(r => r.Profile.Id).ToList();
+            foreach (var r in Bots.All) r.Profile.WantOnline = false;
+            Bots.Save();
+            File.WriteAllText(RunningFlag, DateTime.Now.ToString("o"));
+        }
+        catch (Exception x) { Log.Error("running flag", x); }
+        if (crashed.Count > 0)
+        {
+            Log.Info("AvieBoter was not closed properly last time; bringing back bots: " + crashed.Count);
+            resume = resume.Union(crashed).ToList();
+        }
         if (Settings.Data.StartBotsWithApp || resume.Count > 0) Bots.StartAutoBots(resume);
         Bots.Changed += () => tray?.Update(Bots);
         notifier = new Notifier(this);
         if (StartAfterLaunch != "") StartBot(StartAfterLaunch);
         Bots.ChatArrived += (r, items) => Dispatcher.BeginInvoke(() => notifier.Handle(r, items));
+        if (crashed.Count > 0) tray?.ShowPopup("AvieBoter was not closed properly", (crashed.Count == 1 ? "1 bot comes" : crashed.Count + " bots come") + " back and carries on where it was (seat or following).", "");
         Bots.Alert += (r, title, text) => Dispatcher.BeginInvoke(() => tray?.ShowPopup(title, text, r.Profile.Id));
         AnnounceUpdated();
         // updates: once a minute after the start, then the hourly timer checks whether a day has passed
@@ -202,7 +219,9 @@ public class App : Application
         var err = r.Start();
         Log.Info("--start " + r.Profile.Label + (err == "" ? "" : ": " + err));
     }
-    public void TestNotify() => notifier.Test();
+    public void TestNotify(string kind = "all") => notifier.Test(kind);
+
+    static string RunningFlag => Path.Combine(AppPaths.DataDir, "running.flag");      // removed when AvieBoter closes properly
 
     public void Quit(bool forUpdate = false)
     {
@@ -216,7 +235,9 @@ public class App : Application
             Log.Info("Quit for an update; bots to restart: " + Settings.Data.ResumeBots.Count);
         }
         try { main?.SaveWindow(); } catch { }
+        try { PuppetWindow.CloseAll(); } catch { }
         Bots.StopAll(TimeSpan.FromSeconds(6));
+        try { File.Delete(RunningFlag); } catch { }
         tray?.Dispose();
         Log.Info("Quit");
         Shutdown();

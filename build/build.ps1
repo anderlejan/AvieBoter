@@ -95,7 +95,7 @@ foreach ($f in 'AvieBoter.exe', 'THIRD-PARTY-NOTICES.txt', 'wwwroot\index.html',
     if (-not (Test-Path (Join-Path $stage $f))) { throw "Missing in build: $f" }
 }
 # The HUD script shipped in the app must be the one in source\hud
-foreach ($h in 'AvieBoterHUD.lsl', 'AvieBoterHUDMenu.lsl', 'AvieBoterHUDUpdater.lsl') {
+foreach ($h in 'AvieBoterHUD.lsl', 'AvieBoterHUDMenu.lsl', 'AvieBoterHUDUpdater.lsl', 'AvieBoterHUDCam.lsl') {
     if ((Get-FileHash (Join-Path $src "hud\$h")).Hash -ne (Get-FileHash (Join-Path $stage "wwwroot\hud\$h")).Hash) { throw "wwwroot\hud\$h differs from hud\$h" }
 }
 

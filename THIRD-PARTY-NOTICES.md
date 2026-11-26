@@ -49,6 +49,7 @@ POSSIBILITY OF SUCH DAMAGE.
 | RabbitMQ.Client | Apache-2.0 / MPL-2.0 | https://github.com/rabbitmq/rabbitmq-dotnet-client |
 | RestSharp | Apache-2.0 | https://github.com/restsharp/RestSharp |
 | Betalgo.Ranul.OpenAI | MIT | https://github.com/betalgo/openai |
+| SkiaSharp (through LibreMetaverse's CoreJ2K.Skia; AvieBoter also uses it to show pictures) | MIT | https://github.com/mono/SkiaSharp |
 
 Their exact versions and further dependencies are listed in SecondBot's project file and in
 `bot\SecondBotEvents.deps.json` of an installed copy.

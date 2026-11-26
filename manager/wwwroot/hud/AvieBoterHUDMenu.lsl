@@ -161,25 +161,37 @@ list unsnap(string s)
     return out;
 }
 
-saveLook()
+saveLook()     // "lookv": shape, size, rotation, textures and ring colour; "lookv0" keeps the first one (Original)
 {
     if (!llGetAttached()) return;     // rotations are only right while worn
     string s = snap(LINK_ROOT, [PRIM_TYPE, -1, PRIM_SIZE, -1, PRIM_ROT_LOCAL, -1, PRIM_TEXTURE, 0, PRIM_COLOR, 0,
         PRIM_FULLBRIGHT, 0, PRIM_BUMP_SHINY, 0, PRIM_GLOW, 0]) + "|";
     integer r = ringLink();
     if (r) s += snap(r, [PRIM_TYPE, -1, PRIM_SIZE, -1, PRIM_POS_LOCAL, -1, PRIM_ROT_LOCAL, -1, PRIM_TEXTURE, 0, PRIM_FULLBRIGHT, 0]);
+    s += "|" + (string)((integer)llLinksetDataRead("accent"));
     llLinksetDataWrite("lookv", s);
+    if (llLinksetDataRead("lookv0") == "") llLinksetDataWrite("lookv0", s);
 }
 
-resetLook()
+string lookNow()      // size and ring colour, for the messages of Save look and Reset look
 {
-    list p = llParseStringKeepNulls(llLinksetDataRead("lookv"), ["|"], []);
-    if (llGetListLength(p) < 2) { llOwnerSay("No saved look yet: wear the HUD, then Settings ▸ Save look."); return; }
+    vector z = llList2Vector(llGetLinkPrimitiveParams(LINK_ROOT, [PRIM_SIZE]), 0);
+    return llGetSubString((string)z.x, 0, 4) + " m, " + llList2String(ACCENTS, 2 * (integer)llLinksetDataRead("accent"));
+}
+
+resetLook(string k)
+{
+    list p = llParseStringKeepNulls(llLinksetDataRead(k), ["|"], []);
+    if (llGetListLength(p) < 2) { llOwnerSay("Nothing saved yet: Settings ▸ Save look first."); return; }
+    string was = lookNow();
     llSetLinkPrimitiveParamsFast(LINK_ROOT, unsnap(llList2String(p, 0)));
     integer r = ringLink();
     if (r && llList2String(p, 1) != "") llSetLinkPrimitiveParamsFast(r, unsnap(llList2String(p, 1)));
+    if (llList2String(p, 2) != "") llLinksetDataWrite("accent", llList2String(p, 2));
     ringState("");
-    llOwnerSay("The HUD looks as saved again.");
+    string now = lookNow();
+    if (now == was) llOwnerSay("The HUD already looked like that (" + now + ") – shape and turn put back as well.");
+    else llOwnerSay("HUD look put back: " + was + " → " + now + ".");
 }
 
 resize(float f)
@@ -189,8 +201,7 @@ resize(float f)
         llOwnerSay("The HUD cannot get any " + llList2String(["bigger", "smaller"], f < 1.0) + ".");
         return;
     }
-    llScaleByFactor(f);
-    saveLook();      // the new size is the one Reset look keeps
+    llScaleByFactor(f);      // Reset look undoes it until Save look keeps it
 }
 
 integer textOn() { return llLinksetDataRead("text") != "0"; }
@@ -307,7 +318,7 @@ followMenu()
 
 moreMenu()
 {
-    dialog("more", "\nMore for " + botLabel() + ":\n\nHover ▸: lift or lower the bot.   Status: what the bot is doing and where.", ["◀ Menu", "Set home…", "Log off…", "Hover ▸", "Status"]);
+    dialog("more", "\nMore for " + botLabel() + ":\n\nHover ▸: lift or lower the bot.   Cam ▸: your camera watches the way the bot faces.   Status: what the bot is doing and where.", ["◀ Menu", "Set home…", "Log off…", "Hover ▸", "Status", "Cam ▸"]);
 }
 
 hoverMenu()
@@ -338,7 +349,7 @@ settingsMenu()
     else if (verNum(nw) > verNum(v)) line += " – a newer HUD " + nw + " is ready: press Update HUD.";
     else line += " – the newest.";
     line += "\nFree memory: " + llLinksetDataRead("memcore") + " KB core, " + (string)(llGetFreeMemory() / 1024) + " KB menu.";
-    dialog("settings", "\nHUD settings\n\n" + line + "\n\nSize: Smaller / Bigger (or stretch the HUD in Edit).\nColour: the ring's colour when the bot is ready.\nText: the floating text above the HUD.\nReset look: back to the saved look (Save look keeps the HUD as it is now).\nUpdate HUD: a bot in this region brings the newest HUD.",
+    dialog("settings", "\nHUD settings\n\n" + line + "\n\nSmaller / Bigger: size. Colour: the ring when ready. Text: the floating text.\nSave look keeps size, colour and shape; Reset look goes back to the saved or the original look.\nUpdate HUD: a bot in this region brings the newest HUD.",
         ["◀ Menu", "Help", "Unpair…",
          "Reset look", "Colour ▸", t,
          "Smaller", "Bigger", "Update HUD",
@@ -388,6 +399,7 @@ default
         else if (str == "slbm-ui|status") lastStatus = (string)id;
         else if (str == "slbm-ui|pose") pose = (integer)((string)id);
         else if (str == "slbm-ui|hover") { hoverNow = (string)id; if (menu == "hover") hoverMenu(); }   // show the new height
+        else if (str == "slbm-ui|more") moreMenu();       // back from the camera menu
     }
 
     touch_start(integer n)
@@ -506,6 +518,12 @@ default
         {
             if (msg == "◀ Menu") { mainMenu(); return; }
             if (msg == "Hover ▸") { hoverMenu(); return; }
+            if (msg == "Cam ▸")
+            {
+                if (llGetInventoryType("SL Bot HUD cam") == INVENTORY_SCRIPT) llMessageLinked(LINK_THIS, 0, "slbm-cam|menu", "");
+                else llOwnerSay("Cam needs a newer HUD: press \"Send me a new HUD\" in AvieBoter once.");
+                return;
+            }
             if (msg == "Status") { act("status", []); return; }
             if (msg == "Log off…") confirm("logoff", "Log " + botLabel() + " out of Second Life?");
             else if (msg == "Set home…") confirm("sethome", "Make the place where " + botLabel() + " stands now its home?\n(Second Life allows this only on land where the bot may set home.)");
@@ -518,8 +536,12 @@ default
             else if (msg == "Bigger") resize(1.0 / 0.85);
             else if (msg == "Hide text") { llLinksetDataWrite("text", "0"); showText(); }
             else if (msg == "Show text") { llLinksetDataWrite("text", "1"); showText(); }
-            else if (msg == "Reset look") resetLook();
-            else if (msg == "Save look") { saveLook(); llOwnerSay("Look saved: Reset look brings it back."); }
+            else if (msg == "Reset look") { dialog("resetlook", "\nReset look – back to the look kept with Save look, or the HUD's original look?", ["◀ Back", "Saved", "Original"]); return; }
+            else if (msg == "Save look")
+            {
+                if (llGetAttached()) { saveLook(); llOwnerSay("Look saved (" + lookNow() + "): Reset look ▸ Saved brings it back."); }
+                else llOwnerSay("Wear the HUD to save its look.");
+            }
             else if (msg == "Colour ▸")
             {
                 dialog("colour", "\nRing colour:", ["◀ Back"] + llList2ListStrided(ACCENTS, 0, -1, 2));
@@ -547,6 +569,13 @@ default
                 return;
             }
             else if (msg == "Unpair…") { confirm("unpair", "Remove " + botLabel() + " from this HUD?\n(The bot itself is not changed.)"); return; }
+            settingsMenu();
+            return;
+        }
+        if (menu == "resetlook")
+        {
+            if (msg == "Saved") resetLook("lookv");
+            else if (msg == "Original") resetLook("lookv0");
             settingsMenu();
             return;
         }

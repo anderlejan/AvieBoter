@@ -41,7 +41,7 @@ public sealed class Tray : IDisposable
         foreach (var r in app.Bots.All)
         {
             var item = new ToolStripMenuItem($"{r.Profile.Label}  –  {Pretty(r.State)}");
-            if (r.Running) item.DropDownItems.Add("Stop", null, (_, _) => Task.Run(() => r.Stop(TimeSpan.FromSeconds(6))));
+            if (r.Running || r.State == "waiting") item.DropDownItems.Add("Stop", null, (_, _) => Task.Run(() => r.UserStop(TimeSpan.FromSeconds(6))));
             else item.DropDownItems.Add("Start", null, (_, _) => r.Start());
             m.Items.Add(item);
         }
@@ -52,7 +52,7 @@ public sealed class Tray : IDisposable
     public static string Pretty(string s) => s switch
     {
         "online" => "online", "starting" => "starting", "connecting" => "logging in", "stopping" => "logging out",
-        "failed" => "problem", _ => "stopped",
+        "failed" => "problem", "waiting" => "reconnecting", _ => "stopped",
     };
 
     public void Update(BotManager bots)

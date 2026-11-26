@@ -13,16 +13,25 @@ public class AppSettings
     public double WinX { get; set; } = double.NaN;
     public double WinY { get; set; } = double.NaN;
     public bool WinMax { get; set; }
+    public double PuppetX { get; set; } = double.NaN;   // the Puppeteer window
+    public double PuppetY { get; set; } = double.NaN;
+    public double PuppetW { get; set; }
+    public double PuppetH { get; set; }
+    public int PuppetOpacity { get; set; } = 100;
+    public bool PuppetMap { get; set; } = false;
     public string LastBot { get; set; } = "";
     public string LastSection { get; set; } = "overview";
     public bool ShowNotesButton { get; set; } = false;   // User notes: a feedback tool for whoever develops the app
     public List<string> RecentSlurls { get; set; } = new();
+    public List<Place> SavedPlaces { get; set; } = new();   // named places for "Go to a place" and the login place
     public Dictionary<string, string> Ui { get; set; } = new();   // small UI choices the page remembers
     // notifications about incoming chat (also while the window is hidden)
     public bool NotifyImPopup { get; set; } = true;
     public bool NotifyImSound { get; set; } = true;
     public bool NotifyLocalPopup { get; set; } = false;
     public bool NotifyLocalSound { get; set; } = false;
+    public bool NotifyGroupPopup { get; set; } = true;    // group and conference chats (until 1.6 they counted as IMs)
+    public bool NotifyGroupSound { get; set; } = true;
     // bots that were running when an update closed the app; restarted once after the update
     public List<string> ResumeBots { get; set; } = new();
     public DateTime? ResumeUntil { get; set; }
@@ -58,6 +67,34 @@ public class BotProfile
     public bool SaveEvents { get; set; } = false;     // write comings and goings to daily files (off: only the list in the app)
     public bool AutoUpdateHud { get; set; } = true;   // HUDs made by the bot update themselves when the app has a newer one
     public int YoungAlertDays { get; set; } = 0;      // popup when an avatar younger than this is in the bot's region (0 = off)
+    public string StartLocation { get; set; } = "last"; // where it logs in: last, home or a SLURL
+    public bool WantOnline { get; set; } = false;     // started and not stopped by the user: brought back after a crash or lost connection
+    public Activity? LastActivity { get; set; }        // what it was doing (seated / following), to do again when it comes back
+}
+
+public class Place
+{
+    public string Name { get; set; } = "";
+    public string Slurl { get; set; } = "";
+}
+
+/// <summary>What a bot was doing when last seen online: sitting on a seat or following someone.</summary>
+public class Activity
+{
+    public string Kind { get; set; } = "";            // seat | follow
+    public string SeatId { get; set; } = "";
+    public string SeatName { get; set; } = "";
+    public string Region { get; set; } = "";
+    public long CornerX { get; set; }
+    public long CornerY { get; set; }
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Z { get; set; }
+    public string FollowKey { get; set; } = "";
+    public string FollowName { get; set; } = "";
+    public double FollowDist { get; set; } = 2;
+    public double FollowAngle { get; set; } = 180;
+    public DateTime At { get; set; } = DateTime.Now;
 }
 
 public class Seat

@@ -15,6 +15,14 @@ public class Rpc
 
     static string S(JsonArray a, int i) => a.Count > i ? a[i]?.ToString() ?? "" : "";
 
+    /// <summary>bots\&lt;id&gt;\outfits\&lt;folder key&gt;.jpg – the outfit gallery's pictures, only on this PC.</summary>
+    static string OutfitImageFile(string bot, string folder)
+    {
+        if (!Guid.TryParse(folder, out var g)) throw new UserError("Which outfit?");
+        if (bot == "" || bot.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || bot.Contains("..")) throw new UserError("Which bot?");
+        return Path.Combine(AppPaths.BotsDir, bot, "outfits", g.ToString("D") + ".jpg");
+    }
+
     public async Task<JsonObject?> Handle(JsonObject msg)
     {
         var id = msg["id"]?.GetValue<int>() ?? 0;
@@ -62,6 +70,19 @@ public class Rpc
             case "state": return BotsJson();
             case "setting": return SetSetting(S(a, 0), a.Count > 1 ? a[1] : null);
             case "setBg": win.SetBackground(S(a, 0)); return null;
+            case "places.save":
+                {
+                    string name = S(a, 0).Trim(), url = S(a, 1).Trim();
+                    if (name == "" || url == "") throw new UserError("A name and a place are needed");
+                    st.SavedPlaces.RemoveAll(x => x.Slurl == url || x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    st.SavedPlaces.Insert(0, new Place { Name = name, Slurl = url });
+                    app.Settings.Save();
+                    return JsonSerializer.SerializeToNode(st.SavedPlaces, JsonStore.Options);
+                }
+            case "places.delete":
+                st.SavedPlaces.RemoveAll(x => x.Slurl == S(a, 0));
+                app.Settings.Save();
+                return JsonSerializer.SerializeToNode(st.SavedPlaces, JsonStore.Options);
             case "addRecentSlurl":
                 {
                     string u = S(a, 0).Trim();
@@ -78,7 +99,7 @@ public class Rpc
                     if (err != "") throw new UserError(err);
                     return null;
                 }
-            case "bot.stop": { var r = Runner(S(a, 0)); await Task.Run(() => r.Stop(TimeSpan.FromSeconds(6))); return null; }
+            case "bot.stop": { var r = Runner(S(a, 0)); await Task.Run(() => r.UserStop(TimeSpan.FromSeconds(6))); return null; }
             case "bot.restart":
                 {
                     var r = Runner(S(a, 0));
@@ -158,12 +179,33 @@ public class Rpc
                     if (seat != null && res.Ok) { seat.Uses++; seat.LastUsed = DateTime.Now; app.Bots.Save(); app.Bots.Notify(); }
                     return new JsonObject { ["ok"] = res.Ok, ["reply"] = res.Reply };
                 }
+            case "outfit.image":     // the picture of an outfit (kept on this PC only), as a data URL, or null
+                {
+                    string f = OutfitImageFile(S(a, 0), S(a, 1));
+                    return File.Exists(f) ? JsonValue.Create("data:image/jpeg;base64," + Convert.ToBase64String(await File.ReadAllBytesAsync(f))) : null;
+                }
+            case "outfit.setImage":  // a data URL (JPEG or PNG) saves the picture, "" removes it
+                {
+                    string f = OutfitImageFile(S(a, 0), S(a, 1)), d = S(a, 2);
+                    if (d == "") { if (File.Exists(f)) File.Delete(f); return null; }
+                    int comma = d.IndexOf(',');
+                    if (!d.StartsWith("data:image/") || comma < 0) throw new UserError("That is not a picture");
+                    byte[] bytes = Convert.FromBase64String(d[(comma + 1)..]);
+                    if (bytes.Length > 4_000_000) throw new UserError("The picture is too big");
+                    AppPaths.Ensure(Path.GetDirectoryName(f)!);
+                    await File.WriteAllBytesAsync(f, bytes);
+                    return null;
+                }
             case "bot.openChat": Open(AppPaths.Ensure(Path.Combine(AppPaths.BotsDir, S(a, 0), "chat"))); return null;
             case "bot.chat":
                 {
                     var r = Runner(S(a, 0));
                     long after = a.Count > 1 ? a[1]!.GetValue<long>() : 0;
-                    if (a.Count > 2 && a[2]?.GetValue<bool>() == true) r.MarkRead();
+                    if (a.Count > 2 && a[2] is JsonValue v)
+                    {
+                        if (v.TryGetValue<bool>(out bool all)) { if (all) r.MarkRead(); }
+                        else if (v.TryGetValue<string>(out string? what) && what != null) r.MarkRead(what);
+                    }
                     return JsonSerializer.SerializeToNode(r.ChatSince(after), JsonStore.Options);
                 }
             case "bot.sendChat":
@@ -224,6 +266,29 @@ public class Rpc
                     if (r.Running) r.PushPeople();
                     return null;
                 }
+            case "puppet.open":
+                {
+                    var r = Runner(S(a, 0));
+                    _ = win.Dispatcher.BeginInvoke(() => PuppetWindow.Show(app, r));
+                    return null;
+                }
+            case "bot.puppetView":
+                {
+                    // the Puppeteer's map: where the bot is, where it looks, who is around (once a second)
+                    var r = Runner(S(a, 0));
+                    if (!r.Running) return new JsonObject { ["state"] = r.State };
+                    var stq = r.RunCommand("CompanionStatus", Array.Empty<string>());
+                    var rad = r.RunCommand("CompanionRadar", Array.Empty<string>());
+                    await Task.WhenAll(stq, rad);
+                    return new JsonObject
+                    {
+                        ["state"] = r.State,
+                        ["grid"] = r.Profile.Grid,
+                        ["status"] = stq.Result.Ok && stq.Result.Reply is string ss ? JsonNode.Parse(ss) : null,
+                        ["radar"] = rad.Result.Ok && rad.Result.Reply is string rs ? JsonNode.Parse(rs) : new JsonArray(),
+                    };
+                }
+            case "map.tile": return await MapTiles.Get(a[0]!.GetValue<long>(), a[1]!.GetValue<long>());
             case "bot.radar":
                 {
                     var r = Runner(S(a, 0));
@@ -289,7 +354,7 @@ public class Rpc
             case "openData": Open(AppPaths.DataDir); return null;
             case "openUrl": WebHost.OpenOutside(S(a, 0)); return null;
             case "quit": _ = win.Dispatcher.BeginInvoke(() => app.Quit()); return null;
-            case "notify.test": app.TestNotify(); return null;
+            case "notify.test": app.TestNotify(a.Count > 0 ? S(a, 0) : "all"); return null;
             case "hide": win.Hide(); return null;
 
             // User notes module host api
@@ -338,6 +403,8 @@ public class Rpc
             case "installUpdatesAutomatically": s.InstallUpdatesAutomatically = val?.GetValue<bool>() == true; break;
             case "notifyImPopup": s.NotifyImPopup = val?.GetValue<bool>() == true; break;
             case "notifyImSound": s.NotifyImSound = val?.GetValue<bool>() == true; break;
+            case "notifyGroupPopup": s.NotifyGroupPopup = val?.GetValue<bool>() == true; break;
+            case "notifyGroupSound": s.NotifyGroupSound = val?.GetValue<bool>() == true; break;
             case "notifyLocalPopup": s.NotifyLocalPopup = val?.GetValue<bool>() == true; break;
             case "notifyLocalSound": s.NotifyLocalSound = val?.GetValue<bool>() == true; break;
             case "lastBot": s.LastBot = val?.ToString() ?? ""; break;
@@ -382,6 +449,7 @@ public class Rpc
         p.JoinConferences = conf;
         p.AcceptTeleportsFromMasters = o["acceptTeleports"]?.GetValue<bool>() != false;
         p.AcceptInventoryFromMasters = o["acceptInventory"]?.GetValue<bool>() != false;
+        if (o["startLocation"] is JsonNode sl) { string v = sl.ToString().Trim(); p.StartLocation = v == "" ? "last" : v; }
         if (o["hoverHeight"] is JsonNode hh && double.TryParse(hh.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double h)) p.HoverHeight = Math.Clamp(h, -2, 2);
         if (!string.IsNullOrEmpty(password)) p.PasswordProtected = Secrets.Protect(password);
         if (existing == null) { var r = app.Bots.Add(p); return new JsonObject { ["id"] = r.Profile.Id }; }
@@ -479,10 +547,12 @@ public class Rpc
                 ["status"] = r.Status?.DeepClone(), ["ramMb"] = r.RamMb, ["cpu"] = r.CpuPercent,
                 ["startedAt"] = r.StartedAt?.ToString("o"), ["onlineSince"] = r.OnlineSince?.ToString("o"),
                 ["unread"] = r.Unread,
+                ["unreadBy"] = JsonSerializer.SerializeToNode(r.UnreadBy()),
                 ["joinConferences"] = p.JoinConferences,
                 ["autoUpdateHud"] = p.AutoUpdateHud,
                 ["saveEvents"] = p.SaveEvents,
                 ["youngAlertDays"] = p.YoungAlertDays,
+                ["startLocation"] = p.StartLocation,
                 ["recentOutfits"] = JsonSerializer.SerializeToNode(p.RecentOutfits),
                 ["seats"] = JsonSerializer.SerializeToNode(p.Seats.OrderByDescending(x => x.Uses).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase), JsonStore.Options),
             });

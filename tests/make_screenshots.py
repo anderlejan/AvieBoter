@@ -38,6 +38,23 @@ with sync_playwright() as p:
     pg.click('[data-sec="groups"]'); pg.wait_for_timeout(600); pg.click('#grpBody tr:nth-child(1) [data-gopen]'); pg.wait_for_timeout(700); shot('groups')
     pg.click('[data-sec="log"]'); pg.wait_for_timeout(600); shot('log')
     pg.click('[data-sec="bot"]'); pg.wait_for_timeout(400); shot('bot-settings')
+    # Nearby, object menus, editing, inventory and outfits
+    pg.click('[data-sec="world"]'); pg.wait_for_timeout(900); shot('nearby')
+    pg.evaluate('window.__menusOn = true'); pg.wait_for_timeout(2600); shot('object-menus')
+    pg.evaluate('window.__menusOn = false'); pg.wait_for_timeout(2600)
+    pg.click('#wBody button[data-om="12"]'); pg.wait_for_timeout(200); pg.click('.menu div:has-text("Contents")'); pg.wait_for_timeout(500); shot('contents')
+    pg.click('[data-ti="t1"] [data-ta="open"]'); pg.wait_for_timeout(500); shot('script-editor')
+    pg.keyboard.press('Escape'); pg.wait_for_timeout(200); pg.keyboard.press('Escape'); pg.wait_for_timeout(200)
+    pg.click('[data-sec="inventory"]'); pg.wait_for_timeout(700); shot('inventory')
+    pg.click('[data-m="it2"]'); pg.wait_for_timeout(200); shot('inventory-menu'); pg.keyboard.press('Escape'); pg.mouse.click(5, 740); pg.wait_for_timeout(200)
+    # outfit pictures: simple drawn placeholders (no real photos)
+    pg.evaluate("""(() => { window.__pics = {}; const c = [['#f7b267','#f4845f','🏖'],['#a06cd5','#6247aa','🎉'],['#a8dadc','#457b9d','🧤'],['#3d405b','#81b29a','🎩'],['#b5838d','#6d6875','🧭']];
+      c.forEach((x, i) => { const cv = document.createElement('canvas'); cv.width = cv.height = 256; const g = cv.getContext('2d');
+        const gr = g.createLinearGradient(0, 0, 256, 256); gr.addColorStop(0, x[0]); gr.addColorStop(1, x[1]); g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+        g.font = '120px serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(x[2], 128, 136);
+        window.__pics['11111111-0000-0000-0000-00000000000' + (i + 1)] = cv.toDataURL('image/jpeg', 0.9); }); })()""")
+    pg.click('#invVO'); pg.wait_for_timeout(900); pg.click('[data-oc="11111111-0000-0000-0000-000000000002"] .oname'); pg.wait_for_timeout(200); shot('outfits')
+    pg.click('[data-sec="overview"]'); pg.wait_for_timeout(400)
     pg.click('[data-sec="radar"]'); pg.wait_for_timeout(500); pg.click('[data-avm="aaaa-1"]'); pg.wait_for_timeout(200); shot('radar-menu'); pg.mouse.click(5, 740)
     pg.click('[data-sec="overview"]'); pg.wait_for_timeout(300)
     pg.click('#navList'); pg.wait_for_timeout(200); shot('history'); pg.mouse.click(5, 740)
@@ -53,10 +70,10 @@ with sync_playwright() as p:
     pg.click('#btnSettings'); pg.wait_for_timeout(300)
     pg.evaluate("document.querySelector('#uState').scrollIntoView({block:'center'})"); pg.wait_for_timeout(100); shot('settings')
     pg.keyboard.press('Escape'); pg.wait_for_timeout(200)
-    pg.evaluate("window.__pushUpdate(Object.assign({}, window.__upd, {available:{version:'1.5.0',page:''}, botsOnline:true}))"); pg.wait_for_timeout(200)
+    pg.evaluate("window.__pushUpdate(Object.assign({}, window.__upd, {available:{version:'1.13.0',page:''}, botsOnline:true}))"); pg.wait_for_timeout(200)
     shot('update')
     # the HUD (an illustration drawn from the HUD's script)
-    hp = b.new_page(viewport={'width': 1280, 'height': 620})
+    hp = b.new_page(viewport={'width': 1280, 'height': 1440})
     hp.goto(f'http://127.0.0.1:{port}/__hud/hud-illustration.html'); hp.wait_for_timeout(300)
     hp.locator('#main').screenshot(path=os.path.join(out, 'hud-ingame.png'))
     hp.locator('#menus').screenshot(path=os.path.join(out, 'hud-menus.png'))

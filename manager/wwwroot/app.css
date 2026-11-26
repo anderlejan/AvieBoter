@@ -46,13 +46,13 @@ a { color: var(--acc); }
 .card .l { color: var(--fg2); font-size: .88em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; background: #8892a0; }
 .dot.online { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
-.dot.starting, .dot.connecting, .dot.stopping { background: var(--warn); animation: pulse 1.2s infinite; }
+.dot.starting, .dot.connecting, .dot.stopping, .dot.waiting { background: var(--warn); animation: pulse 1.2s infinite; }
 .dot.failed { background: var(--bad); }
 @keyframes pulse { 50% { opacity: .35; } }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 99px; background: var(--bg4); font-size: .88em; white-space: nowrap; }
 .pill.online { background: rgba(143,227,167,.18); color: var(--ok); }
 .pill.failed { background: var(--bad-bg); color: var(--bad-fg); }
-.pill.starting, .pill.connecting, .pill.stopping { background: rgba(255,211,122,.16); color: var(--warn); }
+.pill.starting, .pill.connecting, .pill.stopping, .pill.waiting { background: rgba(255,211,122,.16); color: var(--warn); }
 .addcard { text-align: center; color: var(--fg2); border-style: dashed; }
 
 /* bot header (pinned) */
@@ -233,3 +233,40 @@ select.in { padding-right: 26px; appearance: none; background-image: linear-grad
 .tbl th.sortable { cursor: pointer; user-select: none; }
 .tbl th.sortable:hover { color: var(--fg); }
 .chatr { font-size: .9em; }
+
+/* unread chat per kind */
+.badge.k-im { background: var(--bad); }
+.badge.k-group { background: #7c6cf0; }
+.badge.k-local { background: #2f8f6b; }
+.badge.k-object { background: var(--bg4); color: var(--fg); }
+.chip .cnt { display: inline-block; min-width: 16px; margin-left: 6px; padding: 0 5px; border-radius: 99px; background: var(--bad); color: #fff; font-size: .8em; font-weight: 700; line-height: 16px; text-align: center; }
+.chip .cnt.hidden { display: none; }
+
+/* sound bell inside a chat filter, copy buttons, split buttons */
+.chip .bell { margin-left: 6px; cursor: pointer; filter: none; opacity: 1; font-size: .95em; }
+.chip .bell:not(.on) { opacity: .45; filter: grayscale(1); }
+.chip .bell:hover { opacity: 1; }
+button.cp { border: 0; background: transparent; cursor: pointer; padding: 0 3px; font-size: .9em; opacity: .65; color: inherit; }
+button.cp:hover { opacity: 1; }
+.split { display: inline-flex; }
+.split .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split .btn.dd2 { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; padding: 0 8px; }
+/* menus objects send the bot (llDialog, llTextBox, permissions, links): cards top right, like a viewer's */
+#menuStack { position: fixed; bottom: 14px; right: 14px; z-index: 70; display: flex; flex-direction: column; gap: 8px; width: 330px; max-height: calc(100vh - 80px); overflow-y: auto; }
+#menuStack:empty { display: none; }
+.mcard { background: var(--bg2); border: 1px solid var(--acc); border-radius: 10px; box-shadow: 0 8px 26px rgba(0,0,0,.45); padding: 10px 12px; }
+.mcard .mh { display: flex; align-items: center; gap: 6px; }
+.mcard .mh .grow { flex: 1; }
+.mcard .mh .x { background: none; border: none; color: var(--fg2); cursor: pointer; font-size: 15px; padding: 0 2px; }
+.mcard .mmsg { white-space: pre-wrap; margin: 8px 0; max-height: 180px; overflow-y: auto; }
+.mcard .mbtns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.mcard .mbtns .btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the outfit gallery (Inventory › Outfits) */
+.ogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 6px; }
+.ocard { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+.ocard.sel { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset; }
+.ocard .opic { aspect-ratio: 1 / 1; border-radius: 7px; background: var(--bg3); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 46px; opacity: .95; }
+.ocard .opic img { width: 100%; height: 100%; object-fit: cover; }
+.ocard .oname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocard .obtns { display: flex; gap: 5px; }
+.ocard .obtns .btn.pri { flex: 1; }

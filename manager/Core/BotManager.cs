@@ -15,10 +15,14 @@ public class BotManager
     public void RaiseAlert(BotRunner r, string title, string text) => Alert?.Invoke(r, title, text);
     DateTime lastNotify = DateTime.MinValue;
 
+    System.Threading.Timer? watchdog;
+
     public void Load()
     {
         list = JsonStore.Load<BotList>(FilePath);
         foreach (var b in list.Bots) runners[b.Id] = new BotRunner(b, this);
+        // brings bots back after a lost connection or a crash of the bot program (see BotRunner.Watchdog)
+        watchdog = new System.Threading.Timer(_ => { foreach (var r in runners.Values.ToList()) r.Watchdog(); }, null, 10000, 10000);
     }
 
     public void Save() { lock (list) JsonStore.Save(FilePath, list, 15); }
@@ -64,7 +68,7 @@ public class BotManager
         foreach (var r in All.Where(r => r.Profile.AutoStart || ids.Contains(r.Profile.Id)))
         {
             if (r.Running) continue;
-            var err = r.Start();
+            var err = r.Start(resume: ids.Contains(r.Profile.Id));
             Log.Info("Start at launch " + r.Profile.Label + (err == "" ? "" : ": " + err));
         }
     }

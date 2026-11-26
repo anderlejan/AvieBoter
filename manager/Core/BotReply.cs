@@ -31,7 +31,7 @@ public static class BotReply
     }
 
     /// <summary>The app's regular polls (status, chat, comings and goings, the open Radar) are not worth a log line.</summary>
-    static readonly string[] Polls = ["CompanionStatus", "CompanionChatSince", "CompanionEventsSince", "CompanionRadar"];
+    static readonly string[] Polls = ["CompanionStatus", "CompanionChatSince", "CompanionEventsSince", "CompanionRadar", "CompanionMenus", "CompanionNearby"];
 
     public static bool IsPollNoise(string line) =>
         line.Contains("Command log:") && line.Contains("\"source\":\"HTTP\"")

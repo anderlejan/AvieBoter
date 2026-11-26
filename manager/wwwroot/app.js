@@ -82,7 +82,7 @@
   const saveUi = (k, v) => { ui[k] = v; rpc('setting', 'ui', { [k]: String(v) }).catch(() => {}); };
   const bot = () => S.bots.find(b => b.id === current);
 
-  const STATE_TEXT = { online: 'Online', starting: 'Starting', connecting: 'Logging in', stopping: 'Logging out', failed: 'Problem', stopped: 'Stopped' };
+  const STATE_TEXT = { online: 'Online', starting: 'Starting', connecting: 'Logging in', stopping: 'Logging out', failed: 'Problem', stopped: 'Stopped', waiting: 'Reconnecting' };
   const GRID_TEXT = { sl: 'Second Life', aditi: 'Second Life Beta (Aditi)', custom: 'Other grid' };
 
   function fmtDur(iso) {
@@ -161,7 +161,7 @@
     const el = $('#botList');
     el.innerHTML = S.bots.map(b => `
       <div class="card ${b.id === current ? 'sel' : ''}" data-bot="${b.id}">
-        <div class="t"><span class="dot ${b.state}"></span><span class="nm">${esc(b.label)}</span>${b.unread ? `<span class="badge" title="New chat or IMs">${b.unread}</span>` : ''}</div>
+        <div class="t"><span class="dot ${b.state}"></span><span class="nm">${esc(b.label)}</span>${unreadBadges(b)}</div>
         <div class="l">${esc(STATE_TEXT[b.state] || b.state)} · ${esc(where(b))}</div>
         <div class="l muted">${b.ramMb ? `${b.ramMb.toFixed(0)} MB · CPU ${b.cpu.toFixed(1)} %` : esc(GRID_TEXT[b.grid] || '')}</div>
       </div>`).join('') + `<div class="card addcard" id="addCard">＋ Add bot</div>`;
@@ -199,12 +199,13 @@
   }
 
   // ---------- main area ----------
-  const SECTIONS = [['overview', '🛈 Overview'], ['chat', '💬 Chat'], ['radar', '📡 Radar'], ['hud', '🎮 HUD'], ['commands', '⌘ Commands'], ['groups', '👥 Groups'], ['log', '📜 Log'], ['bot', '✎ Bot settings']];
+  const SECTIONS = [['overview', '🛈 Overview'], ['chat', '💬 Chat'], ['radar', '📡 Radar'], ['world', '🌍 Nearby'], ['hud', '🎮 HUD'], ['commands', '⌘ Commands'], ['groups', '👥 Groups'], ['inventory', '🎒 Inventory'], ['log', '📜 Log'], ['bot', '✎ Bot settings']];
 
   function renderMain() {
     stopLogTimer();
     stopChatTimer();
     stopRadarTimer();
+    stopWorldTimer();
     const m = $('#main');
     const b = bot();
     if (!b) {
@@ -239,7 +240,7 @@
     m.querySelectorAll('[data-sec]').forEach(x => x.onclick = () => { section = x.dataset.sec; rpc('setting', 'lastSection', section).catch(() => {}); renderMain(); navPush(); });
     updateHead(b);
     updateEnabled(b);
-    ({ overview: renderOverview, chat: renderChat, radar: renderRadar, hud: renderHud, commands: renderCommands, groups: renderGroups, log: renderLog, bot: renderBotSettings })[section](b);
+    ({ overview: renderOverview, chat: renderChat, radar: renderRadar, world: renderWorld, hud: renderHud, commands: renderCommands, groups: renderGroups, inventory: renderInventory, log: renderLog, bot: renderBotSettings })[section](b);
   }
 
   async function act(m, msg) {
@@ -252,7 +253,8 @@
   function updateHead(b) {
     const s = $('#hState'); if (!s) return;
     const cb = $('#chatBadge');
-    if (cb) { cb.textContent = b.unread || ''; cb.classList.toggle('hidden', !b.unread || section === 'chat'); }
+    if (cb) { cb.innerHTML = unreadShort(b); cb.classList.toggle('hidden', !b.unread || section === 'chat'); }
+    if (section === 'chat') chatChipCounts(b);
     s.className = 'pill ' + b.state;
     s.innerHTML = `<span class="dot ${b.state}"></span>${esc(STATE_TEXT[b.state] || b.state)}`;
     const sub = $('#hSub');
@@ -268,7 +270,7 @@
     try { await rpc('bot.run', b.id, 'CompanionFollow', ['stop', '0', '0', 'none']); toast('Stopped following'); } catch (er) { fail(er); }
   });
   function updateEnabled(b) {
-    const running = ['starting', 'connecting', 'online', 'stopping'].includes(b.state);
+    const running = ['starting', 'connecting', 'online', 'stopping', 'waiting'].includes(b.state);
     if ($('#bStart')) { $('#bStart').disabled = running; $('#bStop').disabled = !running; $('#bRestart').disabled = !running; }
     document.querySelectorAll('[data-needs-online]').forEach(x => { x.disabled = b.state !== 'online'; });
   }
@@ -280,17 +282,19 @@
       <div id="ovBanner"></div>
       <div class="grid">
         <div class="box"><h3>Where</h3><div class="big" id="ovRegion">–</div><div class="muted" id="ovPos"></div><div id="ovSeat" class="small"></div></div>
-        <div class="box"><h3>Avatar</h3><div class="kv"><b>Name</b><span id="ovName"></span><b>Key</b><span id="ovUuid" class="mono sel"></span><b>Grid</b><span>${esc(GRID_TEXT[b.grid])}</span></div></div>
+        <div class="box"><h3>Avatar</h3><div class="kv"><b>Name</b><span><span id="ovName" class="sel"></span> <button class="cp" data-copy="ovName" title="Copy the name">📋</button></span><b>Key</b><span><span id="ovUuid" class="mono sel"></span> <button class="cp" data-copy="ovUuid" title="Copy the key">📋</button></span><b>Grid</b><span>${esc(GRID_TEXT[b.grid])}</span><b>Logs in at</b><span id="ovStart"></span></div></div>
         <div class="box"><h3>Load on this PC</h3><div class="kv"><b>Memory</b><span id="ovRam"></span><b>CPU</b><span id="ovCpu"></span><b>Running</b><span id="ovUp"></span></div><div class="note">A Second Life viewer typically needs several GB of memory and the graphics card.</div></div>
       </div>
       <h2>Quick actions</h2>
       <div class="actions">
+        <span class="split"><button class="btn" data-needs-online id="ovCome" title="The bot comes to you – it walks or teleports when it can see you, else it sends you a teleport request (no HUD needed)">🙋 Come to me</button><button class="btn dd2" data-needs-online id="ovComeDd" title="Come to someone else">▾</button></span>
         <button class="btn" data-needs-online data-cmd="Stand">Stand up</button>
         <button class="btn" data-needs-online data-cmd="GoHome" title="Teleports to the bot's home location in Second Life">Go home</button>
         <button class="btn" data-needs-online data-cmd="CompanionSetHome" title="Makes the place where the bot stands its home (SL allows it only on land where the bot may set home)">Set home here</button>
         <button class="btn" data-needs-online data-cmd="CompanionStatus">Refresh status</button>
         <button class="btn" data-needs-online data-cmd="ResetAnimations">Reset animations</button>
         <button class="btn" data-needs-online data-cmd="CompanionUndeform" title="After an outfit change left the bot deformed: stops all its animations and sends its appearance again, so viewers redraw it">Undeform</button>
+        <button class="btn" id="ovPuppet" title="A small window that stays above the viewer: walk, turn, fly the bot by hand, with a map around it">🕹 Puppeteer</button>
       </div>
       <h2>Sit on</h2>
       <div id="seatList" class="seats"></div>
@@ -306,9 +310,10 @@
         <div class="combo"><input class="in" id="outfitName" placeholder="Folder name – My Outfits/<name> first, then any folder with that name"><button class="dd" id="outfitDd" title="Recently worn and My Outfits">▾</button></div>
         <button class="btn" data-needs-online id="outfitWear" title="Takes off the current outfit and wears this folder">Wear (replaces outfit)</button>
       </div>
-      <h2>Teleport</h2>
+      <h2>Go to a place</h2>
       <div class="row">
-        <div class="combo"><input class="in" id="tpUrl" placeholder="SLURL, e.g. http://maps.secondlife.com/secondlife/Ahern/128/128/30"><button class="dd" id="tpDd" title="Recent places">▾</button></div>
+        <div class="combo"><input class="in" id="tpUrl" placeholder="SLURL, Region/x/y/z, or x y z in the bot's region"><button class="dd" id="tpDd" title="Saved and recent places">▾</button></div>
+        <button class="btn" data-needs-online id="tpWalk" title="Walks there when it is near; a far place gets a teleport close by first">🚶 Walk to</button>
         <button class="btn" data-needs-online id="tpGo">Teleport</button>
       </div>
       <h2>Say something as the bot</h2>
@@ -325,15 +330,24 @@
       </div>
       <div id="ovResult"></div>`;
     c.querySelectorAll('[data-cmd]').forEach(x => x.onclick = () => runShow(x.dataset.cmd, []));
-    $('#tpGo').onclick = () => {
-      const u = $('#tpUrl').value.trim();
-      if (!u) { toast('Paste a SLURL first', 'bad'); return; }
-      rpc('addRecentSlurl', u).then(l => { S.settings.recentSlurls = l; }).catch(() => {});
-      runShow('TeleportSLURL', [u]);
+    c.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => rpc('copy', $('#' + x.dataset.copy).textContent).then(() => toast('Copied')).catch(fail));
+    if ($('#ovPuppet')) $('#ovPuppet').onclick = () => rpc('puppet.open', b.id).catch(fail);
+    const placeArg = () => { const u = $('#tpUrl').value.trim(); if (!u) toast('Paste a SLURL or choose a place first', 'bad'); else rpc('addRecentSlurl', u).then(l => { S.settings.recentSlurls = l; }).catch(() => {}); return u; };
+    // Teleport takes a full SLURL: "Region/x/y/z" and "x y z" (in the bot's region) are turned into one
+    const toSlurl = u => {
+      if (/^(https?|secondlife):/i.test(u)) return u;
+      const n = u.split(/[ ,;]+/).filter(Boolean);
+      const st = b.status || {};
+      if (n.length >= 2 && n.length <= 3 && n.every(x => !isNaN(+x)) && st.region) return `http://maps.secondlife.com/secondlife/${encodeURIComponent(st.region)}/${n[0]}/${n[1]}/${n[2] || Math.round(st.z || 25)}`;
+      return 'http://maps.secondlife.com/secondlife/' + u.split('/').map((x, i) => i ? x : encodeURIComponent(x.trim())).join('/');
     };
-    $('#tpUrl').addEventListener('keydown', e => { if (e.key === 'Enter') $('#tpGo').click(); });
-    $('#tpDd').onclick = e => showMenu(e.currentTarget, [{ hd: 'Recent places' }].concat((S.settings.recentSlurls || []).map(u => ({ t: u, f: () => { $('#tpUrl').value = u; } })))
-      .concat((S.settings.recentSlurls || []).length ? [] : [{ hd: '(none yet)' }]));
+    $('#tpGo').onclick = () => { const u = placeArg(); if (u) runShow('TeleportSLURL', [toSlurl(u)]); };
+    $('#tpWalk').onclick = () => { const u = placeArg(); if (u) runShow('CompanionWalkTo', [u]); };
+    $('#tpUrl').addEventListener('keydown', e => { if (e.key === 'Enter') $('#tpWalk').click(); });
+    $('#tpDd').onclick = e => placeMenu(e.currentTarget, v => { $('#tpUrl').value = v; }, b, $('#tpUrl').value.trim());
+    const comeTo = who => { if (!who) { toast('Add yourself under "Who may command it" first', 'bad'); return; } runShow('CompanionComeTo', [who]); };
+    $('#ovCome').onclick = () => comeTo((b.masters || [])[0]);
+    $('#ovComeDd').onclick = e => avatarMenu(e.currentTarget, comeTo);
     $('#sayGo').onclick = () => { const t = $('#sayText').value; if (!t) return; runShow($('#sayKind').value, [String(parseInt($('#sayCh').value, 10) || 0), t]).then(ok => { if (ok) $('#sayText').value = ''; }); };
     $('#sayText').addEventListener('keydown', e => { if (e.key === 'Enter') $('#sayGo').click(); });
     $('#imDd').onclick = e => avatarMenu(e.currentTarget, v => { $('#imTo').value = v; });
@@ -454,6 +468,9 @@
   });
   async function refreshState() { try { onState(await rpc('state')); } catch { } }
 
+  const setText = (sel, t) => { const e = $(sel); if (e && e.textContent !== t) e.textContent = t; };
+  const setHtml = (sel, h) => { const e = $(sel); if (e && e.dataset.h !== h) { e.innerHTML = h; e.dataset.h = h; } };
+  const startText = v => !v || v === 'last' ? 'the last place' : v === 'home' ? 'its home' : v;
   function updateOverview(b) {
     if (!$('#ovRegion')) return;
     drawSeats(b);
@@ -465,14 +482,16 @@
       sc.textContent = saved ? '★ The current seat is in the list' : '☆ Save the seat it sits on now';
     }
     const st = b.status && b.status.online ? b.status : null;
-    $('#ovRegion').textContent = st ? st.region : (b.state === 'online' ? '…' : STATE_TEXT[b.state]);
-    $('#ovPos').textContent = st ? `x ${st.x} · y ${st.y} · z ${st.z}` : (b.state === 'connecting' ? (b.loginStep || '') : '');
-    $('#ovSeat').innerHTML = st ? (st.sitting ? `🪑 Sitting on <b>${esc(st.seatName || 'an object')}</b>` : 'Standing') : '';
-    $('#ovName').textContent = (st && st.name) || b.botName || b.username;
-    $('#ovUuid').textContent = (st && st.uuid) || b.botUuid || 'known after the first login';
-    $('#ovRam').textContent = b.ramMb ? `${b.ramMb.toFixed(0)} MB` : '–';
-    $('#ovCpu').textContent = b.ramMb ? `${b.cpu.toFixed(1)} %` : '–';
-    $('#ovUp').textContent = b.startedAt && b.ramMb ? fmtDur(b.startedAt) : '–';
+    // only what changed is written, so a selection (to copy the key or a name) survives the refresh
+    setText('#ovRegion', st ? st.region : (b.state === 'online' ? '…' : STATE_TEXT[b.state]));
+    setText('#ovPos', st ? `x ${st.x} · y ${st.y} · z ${st.z}` : (b.state === 'connecting' ? (b.loginStep || '') : ''));
+    setHtml('#ovSeat', st ? (st.sitting ? `🪑 Sitting on <b>${esc(st.seatName || 'an object')}</b>` : 'Standing') : '');
+    setText('#ovName', (st && st.name) || b.botName || b.username);
+    setText('#ovUuid', (st && st.uuid) || b.botUuid || 'known after the first login');
+    setText('#ovStart', startText(b.startLocation));
+    setText('#ovRam', b.ramMb ? `${b.ramMb.toFixed(0)} MB` : '–');
+    setText('#ovCpu', b.ramMb ? `${b.cpu.toFixed(1)} %` : '–');
+    setText('#ovUp', b.startedAt && b.ramMb ? fmtDur(b.startedAt) : '–');
     const ban = $('#ovBanner');
     const html = b.lastError ? `<div class="banner bad"><span class="grow">⚠ ${esc(b.lastError)}</span><button class="btn sm" id="banLog">Show log</button></div>`
       : (b.state === 'stopped' && !b.hasPassword ? `<div class="banner info"><span class="grow">Enter the avatar's password under ✎ Bot settings, then press ▶ Start.</span></div>` : '');
@@ -521,6 +540,28 @@
     openMenu = m;
   }
   let nearby = [];
+  // saved places (named), recent ones, and where the bot is now – for "Go to a place" and the login place
+  function slurlOf(st) { return st && st.online ? `http://maps.secondlife.com/secondlife/${encodeURIComponent(st.region)}/${Math.round(st.x)}/${Math.round(st.y)}/${Math.round(st.z)}` : ''; }
+  function placeMenu(anchor, pick, b, current) {
+    const saved = S.settings.savedPlaces || [], recent = S.settings.recentSlurls || [];
+    const here = slurlOf(b && b.status);
+    const items = [];
+    if (here) items.push({ t: '📍 Where the bot is now', f: () => pick(here) });
+    items.push({ hd: 'Saved places' });
+    if (saved.length) saved.forEach(p => items.push({ t: '★ ' + p.name, f: () => pick(p.slurl) }));
+    else items.push({ hd: '(none yet)' });
+    if (current) items.push({ t: '☆ Save the place in the field…', f: async () => {
+      const name = await askText('Name for this place', current.replace(/^.*secondlife\//, '').replace(/\//g, ' '));
+      if (!name) return;
+      try { S.settings.savedPlaces = await rpc('places.save', name, current); toast('Saved: ' + name); } catch (er) { fail(er); }
+    } });
+    if (saved.length) items.push({ t: '🗑 Remove a saved place…', f: () => showMenu(anchor, [{ hd: 'Remove' }].concat(saved.map(p => ({ t: '✕ ' + p.name, f: async () => { S.settings.savedPlaces = await rpc('places.delete', p.slurl); toast('Removed: ' + p.name); } })))) });
+    items.push({ hd: 'Recent' });
+    if (recent.length) recent.forEach(u => items.push({ t: u, f: () => pick(u) }));
+    else items.push({ hd: '(none yet)' });
+    showMenu(anchor, items);
+  }
+
   async function avatarMenu(anchor, pick) {
     const b = bot();
     const items = [{ hd: 'People who may command the bot' }].concat((b.masters || []).map(n => ({ t: n, f: () => pick(n) })));
@@ -809,6 +850,24 @@
   // ---------- Chat ----------
   let chatTimer = 0, chatSeq = 0, chatItems = [], imTarget = null;
   function stopChatTimer() { clearInterval(chatTimer); chatTimer = 0; }
+  // unread chat per kind, so an IM is seen without opening every chat filter
+  const UNREAD_KINDS = [['im', '✉', 'IM', 'IMs'], ['group', '👥', 'group or conference message', 'group or conference messages'], ['local', '💬', 'local chat line', 'local chat lines'], ['object', '⚙', 'object or system message', 'object or system messages']];
+  const unreadOf = (b, k) => (b.unreadBy || {})[k] || 0;
+  function unreadBadges(b) {
+    return UNREAD_KINDS.filter(([k]) => unreadOf(b, k)).map(([k, ic, one, many]) => { const n = unreadOf(b, k); return `<span class="badge k-${k}" title="${n} new ${n === 1 ? one : many}">${ic} ${n}</span>`; }).join('');
+  }
+  function unreadShort(b) { return UNREAD_KINDS.filter(([k]) => unreadOf(b, k)).map(([k, ic]) => `${ic}${unreadOf(b, k)}`).join(' '); }
+  const CHIP_KIND = { local: 'local', im: 'im', group: 'group', object: 'object' };
+  function chatChipCounts(b) {
+    document.querySelectorAll('#chatFilter [data-f]').forEach(ch => {
+      const k = CHIP_KIND[ch.dataset.f], n = k ? unreadOf(b, k) : 0, cnt = ch.querySelector('.cnt');
+      if (cnt) { cnt.textContent = n || ''; cnt.classList.toggle('hidden', !n); }
+    });
+  }
+  // the sound of each kind: a bell inside its chat filter (bright = on, crossed and dim = off)
+  const SND_KEY = { im: 'notifyImSound', group: 'notifyGroupSound', local: 'notifyLocalSound' };
+  const SND_NAME = { notifyImSound: 'IMs', notifyGroupSound: 'group chats', notifyLocalSound: 'local chat' };
+  const bellHtml = k => `<span class="bell ${S.settings[k] ? 'on' : ''}" data-snd="${k}" title="Sound for ${SND_NAME[k]}: ${S.settings[k] ? 'on' : 'off'} – click to switch">${S.settings[k] ? '🔔' : '🔕'}</span>`;
   const CHAT_KINDS = { local: 'Local', whisper: 'Whisper', shout: 'Shout', im: 'IM', group: 'Group', conference: 'Conference', object: 'Object', ownersay: 'Object', objectim: 'Object IM', system: 'System', notice: 'Notice' };
   function renderChat(b) {
     const c = $('#content');
@@ -816,8 +875,8 @@
     chatSeq = 0; chatItems = [];
     c.innerHTML = `
       <div class="logbar">
-        <span class="chips" id="chatFilter">${[['all', 'All'], ['local', 'Local chat'], ['im', 'IMs'], ['object', 'Objects & system']].map(([k, t]) => `<span class="chip ${(ui.chatFilter || 'all') === k ? 'on' : ''}" data-f="${k}">${t}</span>`).join('')}</span>
-        <span class="grow"></span><span class="muted small">Click a name to answer by IM</span>
+        <span class="chips" id="chatFilter">${[['all', 'All'], ['im', 'IMs'], ['group', 'Groups'], ['local', 'Local chat'], ['object', 'Objects & system']].map(([k, t]) => `<span class="chip ${(ui.chatFilter || 'all') === k ? 'on' : ''}" data-f="${k}" title="${k === 'all' ? 'Everything' : 'New ones are counted here until you look at them'}">${t}<span class="cnt hidden"></span>${SND_KEY[k] ? bellHtml(SND_KEY[k]) : ''}</span>`).join('')}</span>
+        <span class="grow"></span>
         <button class="btn sm" id="chatOpen" title="Daily chat files">📂 Chat folder</button>
       </div>
       <div class="log chatbox" id="chatBox"></div>
@@ -832,7 +891,8 @@
       const f = ui.chatFilter || 'all';
       if (f === 'all') return true;
       if (f === 'local') return ['local', 'whisper', 'shout'].includes(k);
-      if (f === 'im') return ['im', 'group', 'conference'].includes(k);
+      if (f === 'im') return k === 'im';
+      if (f === 'group') return ['group', 'conference'].includes(k);
       return ['object', 'ownersay', 'objectim', 'system', 'notice'].includes(k);
     };
     const draw = () => {
@@ -846,14 +906,23 @@
     };
     const pull = async (first) => {
       try {
-        const add = await rpc('bot.chat', b.id, chatSeq, true);
+        const add = await rpc('bot.chat', b.id, chatSeq, (ui.chatFilter || 'all') === 'all' ? true : ui.chatFilter);
         if (add.length) { chatItems = chatItems.concat(add).slice(-1500); chatSeq = add[add.length - 1].seq; draw(); if (first) box.scrollTop = box.scrollHeight; }
         else if (first) draw();
       } catch { }
     };
     const setMode = m => { $('#chatMode').value = m; $('#imBox').classList.toggle('hidden', m !== 'im'); };
     $('#chatMode').onchange = () => setMode($('#chatMode').value);
-    $('#chatFilter').onclick = e => { const x = e.target.closest('[data-f]'); if (!x) return; saveUi('chatFilter', x.dataset.f); $('#chatFilter').querySelectorAll('.chip').forEach(ch => ch.classList.toggle('on', ch === x)); draw(); };
+    $('#chatFilter').onclick = e => {
+      const bell = e.target.closest('[data-snd]');
+      if (bell) {
+        e.stopPropagation();
+        const k = bell.dataset.snd, on = !S.settings[k];
+        S.settings[k] = on; bell.outerHTML = bellHtml(k);
+        rpc('setting', k, on).then(() => toast((on ? 'Sound on for ' : 'Sound off for ') + SND_NAME[k])).catch(fail);
+        return;
+      } const x = e.target.closest('[data-f]'); if (!x) return; saveUi('chatFilter', x.dataset.f); $('#chatFilter').querySelectorAll('.chip').forEach(ch => ch.classList.toggle('on', ch === x)); draw(); rpc('bot.chat', b.id, 1e15, x.dataset.f === 'all' ? true : x.dataset.f).catch(() => { }); };
+    chatChipCounts(b);
     box.onclick = e => {
       const a = e.target.closest('[data-im]'); if (!a) return;
       e.preventDefault();
@@ -893,6 +962,492 @@
   // ---------- Commands ----------
   const HIDDEN_MODULES = ['Discord', 'RabbitMQ', 'StreamAdmin', 'Services', 'Funds'];
   let selCmd = '';
+  // ---------- a text editor for notecards and scripts (in the inventory or inside an object) ----------
+  // save(text) → the bot's reply ({saved, messages} for scripts); a script's compile messages show under the text
+  function textEditor(title, text, opts) {
+    const o = opts || {};
+    const body = `<textarea class="in mono" id="edT" spellcheck="false" style="width:100%;height:58vh;resize:vertical;font-family:Consolas,monospace;font-size:13px;white-space:pre;tab-size:4" ${o.save ? '' : 'readonly'}>${esc(text)}</textarea>
+      <div id="edMsg" class="small" style="margin-top:6px;white-space:pre-wrap;max-height:120px;overflow:auto"></div>
+      ${o.save ? '' : `<p class="muted small">${esc(o.why || 'Read only – the bot may not change it.')}</p>`}`;
+    const btns = [];
+    if (o.save) btns.push({ t: o.script ? 'Save and compile' : 'Save', cls: 'pri', f: async () => {
+      const msg = $('#edMsg'); msg.textContent = 'Saving…'; msg.style.color = '';
+      try {
+        const r = await o.save($('#edT').value);
+        let j = null; try { j = JSON.parse(r); } catch { }
+        const m = j && j.messages ? j.messages.filter(x => x && x.trim()) : [];
+        const bad = m.some(x => /error/i.test(x)) || m.includes('did not compile');
+        msg.style.color = bad ? 'var(--bad,#e66)' : 'var(--good,#6c6)';
+        msg.textContent = (bad ? '✗ Saved, but it did not compile:\n' : o.script ? '✓ Saved and compiled' + (j && j.running === true ? ' – it runs' : j && j.running === false ? ' – but it does not run (scripts may be off on this land)' : '') + (m.length ? ':\n' : '') : '✓ Saved') + m.join('\n');
+      } catch (er) { msg.style.color = 'var(--bad,#e66)'; msg.textContent = '✗ ' + er.message; }
+    } });
+    btns.push({ t: 'Close', f: c => c() });
+    dialog(title, body, btns, { wide: true });
+    const ta = $('#edT');
+    // Tab inserts spaces in scripts instead of leaving the box
+    ta.onkeydown = e => { if (e.key === 'Tab' && o.save) { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('    ', s, ta.selectionEnd, 'end'); } };
+    ta.focus();
+  }
+
+  // ---------- Nearby (the world around the bot) ----------
+  // objects around the bot like a viewer's: touch, sit, go to, take, copy, wear, delete, return, look inside
+  let worldTimer = 0;
+  function stopWorldTimer() { clearInterval(worldTimer); worldTimer = 0; }
+  const W_FILTERS = [['all', 'All'], ['mine', 'The bot\'s'], ['touch', '👆 Touch'], ['sit', '🪑 Seats'], ['sale', '🏷 For sale']];
+  async function renderWorld(b) {
+    const c = $('#content');
+    if (b.state !== 'online') { c.innerHTML = '<p class="muted">Start the bot to see what is around it.</p>'; return; }
+    const st = ui.world = ui.world || { range: '20', f: 'all', q: '' };
+    if (!['5', '10', '20', '40', '64', '128', '256'].includes(st.range)) st.range = '256';
+    c.innerHTML = `<div class="row" style="align-items:center;gap:6px;flex-wrap:wrap">
+        <div class="seg" id="wF">${W_FILTERS.map(([k, t]) => `<button data-wf="${k}" class="${st.f === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+        <input class="in" id="wQ" placeholder="Name – Enter searches the whole range" title="Typing filters the list; Enter (or 🔍) asks the bot to search every object in the chosen range by name" style="max-width:240px" value="${esc(st.q)}"><button class="btn sm" id="wFind" title="Search every object in the range by name">🔍</button>
+        <select class="in sm" id="wR" style="width:auto;flex:0 0 auto" title="How far around the bot. Further than 64 m: the bot looks further for a few minutes (takes a few seconds)">${[5, 10, 20, 40, 64, 128, 256].map(r => `<option value="${r}" ${st.range === String(r) ? 'selected' : ''}>${r === 256 ? 'the whole region' : 'within ' + r + ' m'}</option>`).join('')}</select>
+        <span class="grow"></span>
+        <label class="switch small" title="Menus, text boxes and questions that objects send the bot also appear as a blue menu on the HUD of the person who uses the bot (HUD 1.7.2 or newer); your answer there goes back to the bot"><input type="checkbox" id="wHud"><span class="tr"></span>Menus on my HUD</label>
+        <span id="wSit"></span>
+        <button class="btn sm" id="wBox" title="Rezzes a 0.5 m box in front of the bot (where it may build)">＋ Box</button>
+        <button class="btn sm" id="wRef" title="Look again">⟳</button></div>
+      <div id="wInfo" class="muted small" style="margin:6px 0"></div>
+      <table class="tbl"><thead><tr><th style="width:52px"></th><th>Name</th><th>Owner</th><th style="text-align:right">Distance</th><th></th></tr></thead><tbody id="wBody"></tbody></table>`;
+    const run = async (cmd, args) => { const r = await rpc('bot.run', b.id, cmd, args); if (!r || r.ok === false) throw new Error((r && r.reply) || 'failed'); return r.reply; };
+    let objs = [], sitting = 0, busy = false, total = 0, unnamed = 0;
+    const shown = () => objs.filter(o => {
+      if (st.q && !(o.name || '').toLowerCase().includes(st.q.toLowerCase())) return false;
+      return st.f === 'all' || (st.f === 'mine' ? o.mine : st.f === 'touch' ? o.touch : st.f === 'sit' ? (o.sit || o.seated) : o.sale);
+    });
+    const marks = o => (o.seated ? '🧍' : o.sit ? '🪑' : '') + (o.touch ? '👆' : '') + (o.sale ? '🏷' : '') + (o.temp ? '⏱' : '');
+    const draw = () => {
+      const list = shown();
+      $('#wBody').innerHTML = list.map(o => `<tr data-o="${o.lid}">
+          <td title="🪑 seat · 👆 touchable · 🏷 for sale · ⏱ temporary · 🧍 the bot sits here">${marks(o)}</td>
+          <td><a href="#" data-om="${o.lid}" title="${esc(o.desc || '')}">${esc(o.name || '(no name yet)')}</a>${o.seated ? ' <span class="pill online" style="padding:0 6px">sitting here</span>' : ''}${o.mine ? ' <span class="muted small">the bot\'s</span>' : ''}</td>
+          <td class="small">${esc(o.ownerName || '')}</td>
+          <td style="text-align:right;white-space:nowrap">${o.dist} m</td>
+          <td style="text-align:right;white-space:nowrap">${o.touch ? `<button class="btn sm" data-oa="touch" data-l="${o.lid}" title="Touch it">👆</button>` : ''}${o.sit && !o.seated ? `<button class="btn sm" data-oa="sit" data-l="${o.lid}" title="Sit on it">🪑</button>` : ''}<button class="btn sm" data-om="${o.lid}">⋯</button></td></tr>`).join('')
+        || `<tr><td colspan="5" class="muted">${objs.length ? 'Nothing matches the filter.' : 'Nothing found in this range.'}</td></tr>`;
+      $('#wInfo').innerHTML = (st.find ? `🔍 "${esc(st.find)}": ${objs.length} found among ${total} objects` + (unnamed ? ` (${unnamed} did not tell their name yet – search again)` : '') + ' <a href="#" id="wFindX">show all again</a>'
+        : objs.length ? `${list.length} of ${objs.length} objects` + (total > objs.length ? ` (the nearest ${objs.length} of ${total}, and all of the bot's – Enter in the name box searches them all)` : '') : '')
+        + (+st.range > 64 ? ' · the bot looks further than usual for a few minutes' : '');
+      const fx = $('#wFindX'); if (fx) fx.onclick = e => { e.preventDefault(); st.find = ''; st.q = ''; $('#wQ').value = ''; load(); };
+      $('#wSit').innerHTML = sitting ? '<button class="btn sm" id="wStand">🧍 Stand up</button>' : '';
+      if (sitting) $('#wStand').onclick = () => act('stand', 0);
+    };
+    async function load(quiet) {
+      if (busy) return;
+      if (!$('#wBody')) { stopWorldTimer(); return; }
+      if (quiet && (openMenu || openDialogs.size)) return;   // keep a menu or dialog where it is
+      busy = true;
+      if (!quiet) $('#wInfo').textContent = st.find ? 'Searching every object in range by name – this can take a few seconds…' : +st.range > 64 ? 'Looking further around – this takes a few seconds…' : 'Looking around…';
+      try { const r = JSON.parse(await run('CompanionNearby', [st.range, st.find || 'none'])); objs = r.objects || []; total = r.total || objs.length; unnamed = r.unnamed || 0; sitting = r.sitting || 0; if ($('#wBody')) draw(); }
+      catch (er) { if (!quiet && $('#wInfo')) $('#wInfo').textContent = 'Could not look around: ' + er.message; }
+      finally { busy = false; }
+    }
+    const DONE_RELOAD = ['sit', 'stand', 'take', 'copy', 'delete', 'return', 'wear', 'go', 'rename', 'newbox'];
+    async function act(action, lid, arg) {
+      try { toast(await run('CompanionObjectDo', [action, String(lid), arg === undefined || arg === '' ? 'none' : arg])); if (DONE_RELOAD.includes(action)) setTimeout(() => load(true), action === 'go' ? 4000 : 1500); }
+      catch (er) { fail(er); }
+    }
+    const pre = t => `<pre style="white-space:pre-wrap;max-height:60vh;overflow:auto;margin:0">${esc(t)}</pre>`;
+    async function about(o) {
+      try {
+        const i = JSON.parse(await run('CompanionObjectDo', ['info', String(o.lid), 'none']));
+        const rows = [['Description', i.desc], ['Owner', i.owner], ['Creator', i.creator], ['The owner may', i.ownerPerms], ['Next owner may', i.nextPerms],
+          ['Anyone may copy', i.everyoneCopy ? 'yes' : 'no'], ['For sale', i.sale === 'Not' ? 'no' : `${i.sale} · L$ ${i.price}`], ['Prims', i.prims], ['Scripted', i.scripted ? 'yes' : 'no'], ['Position', i.pos], ['Key', i.id]];
+        dialog(i.name || o.name, `<table class="tbl">${rows.map(([k, v]) => `<tr><td class="muted" style="width:150px">${k}</td><td>${esc(String(v ?? ''))}</td></tr>`).join('')}</table>`, [{ t: 'Close', f: x => x() }], { wide: true });
+      } catch (er) { fail(er); }
+    }
+    async function inside(o) {
+      const nm = o.name || 'the object', canMod = o.mine || o.modify, L = String(o.lid);
+      let l = [];
+      const get = async () => { l = JSON.parse(await run('CompanionObjectDo', ['contents', L, 'none'])); };
+      const table = () => l.length ? `<table class="tbl">${l.map(x => `<tr data-ti="${esc(x.id)}"><td style="width:28px">${INV_ICON[x.kind] || '·'}</td><td>${esc(x.name)}</td><td style="text-align:right;white-space:nowrap">${x.kind === 'Notecard' || x.kind === 'LSL' ? `<button class="btn sm" data-ta="open">${canMod && x.mod ? '✎ Open' : '📝 Read'}</button>` : ''}${canMod ? '<button class="btn sm" data-ta="take" title="Into the bot\'s inventory">🎒</button><button class="btn sm" data-ta="delete" title="Delete it from inside">🗑</button>' : ''}</td></tr>`).join('')}</table>` : '<p class="muted">Empty – or the bot may not look inside.</p>';
+      try { await get(); } catch (er) { fail(er); return; }
+      dialog('Inside ' + nm, `<div id="tiBox">${table()}</div>` + (canMod ? '<div class="row" style="gap:6px;margin-top:8px;align-items:center"><button class="btn sm" id="tiNS">＋ New script</button><button class="btn sm" id="tiNN">＋ New notecard</button><span class="muted small">To put something from the inventory in: Inventory › ⋯ › Put into an object nearby</span></div>' : ''), [{ t: 'Close', f: x => x() }], { wide: true });
+      const again = () => setTimeout(async () => { try { await get(); const b2 = $('#tiBox'); if (b2) b2.innerHTML = table(); } catch { } }, 1500);
+      $('#tiBox').onclick = async e => {
+        const btn = e.target.closest('[data-ta]'); if (!btn) return;
+        const id = btn.closest('[data-ti]').dataset.ti, x = l.find(y => y.id === id); if (!x) return;
+        const ta = btn.dataset.ta;
+        if (ta === 'open') {
+          try { const t = await run('CompanionTaskDo', ['read', L, id, 'none']); textEditor(x.name + ' – inside ' + nm, t, { script: x.kind === 'LSL', save: canMod && x.mod ? txt => run('CompanionTaskDo', ['save', L, id, txt === '' ? 'none' : txt]) : null }); }
+          catch (er) { fail(er); }
+        } else if (ta === 'delete') confirmDlg('Delete ' + x.name + '?', 'It is removed from inside ' + nm + ' for good.', 'Delete', async () => { try { toast(await run('CompanionTaskDo', ['delete', L, id, 'none'])); again(); } catch (er) { fail(er); } });
+        else if (ta === 'take') { try { toast(await run('CompanionTaskDo', ['take', L, id, 'none'])); again(); } catch (er) { fail(er); } }
+      };
+      const mkIn = async (action, def) => { const n = await askText('Name', def); if (!n) return; try { toast(await run('CompanionTaskDo', [action, L, 'none', n])); again(); } catch (er) { fail(er); } };
+      if (canMod) { $('#tiNS').onclick = () => mkIn('newscript', 'New Script'); $('#tiNN').onclick = () => mkIn('newnote', 'New Note'); }
+    }
+    function objMenu(anchor, o) {
+      const m = [{ hd: o.name || 'Object' }];
+      m.push({ t: '👆 Touch', f: () => act('touch', o.lid) });
+      m.push(o.seated ? { t: '🧍 Stand up', f: () => act('stand', 0) } : { t: '🪑 Sit on it', f: () => act('sit', o.lid) });
+      m.push({ t: '🚶 Go to it', f: () => act('go', o.lid) });
+      m.push({ t: 'ℹ About it', f: () => about(o) });
+      m.push({ t: o.mine || o.modify ? '🔍 Contents (scripts, notecards…)' : '🔍 Look inside', f: () => inside(o) });
+      if (o.mine || o.modify) {
+        m.push({ t: '✎ Rename…', f: async () => { const n = await askText('New name', o.name || ''); if (n && n !== o.name) act('rename', o.lid, n); } });
+        m.push({ t: '✎ Description…', f: async () => { const n = await askText('Description', o.desc || ''); if (n && n !== o.desc) act('describe', o.lid, n); } });
+      }
+      if (o.mine) {
+        m.push({ t: '🎒 Take into the inventory', f: () => act('take', o.lid) });
+        m.push({ t: '👕 Wear it', f: () => act('wear', o.lid) });
+      }
+      if (o.copy) m.push({ t: '📄 Take a copy', f: () => act('copy', o.lid) });
+      if (o.mine || o.modify) m.push({ t: '🗑 Delete (to the bot\'s Trash)', f: () => confirmDlg('Delete ' + (o.name || 'this object') + '?', 'It goes to the bot\'s Trash in its inventory – you can bring it back from there.', 'Delete', () => act('delete', o.lid)) });
+      m.push({ t: o.mine ? '↩ Return (to Lost and Found)' : '↩ Return to its owner', f: () => confirmDlg('Return ' + (o.name || 'this object') + '?', o.mine ? 'It goes back into the bot\'s inventory (Lost and Found).' : 'It goes back to its owner. Only the land owner or an estate manager may return other people\'s things.', 'Return', () => act('return', o.lid)) });
+      m.push({ t: '🔑 Copy its key', f: () => { navigator.clipboard.writeText(o.id); toast('Key copied'); } });
+      showMenu(anchor, m);
+    }
+    $('#wBody').onclick = e => {
+      const a = e.target.closest('[data-oa]');
+      if (a) { act(a.dataset.oa, a.dataset.l); return; }
+      const mm = e.target.closest('[data-om]');
+      if (mm) { e.preventDefault(); const o = objs.find(x => String(x.lid) === mm.dataset.om); if (o) objMenu(mm, o); }
+    };
+    $('#wF').onclick = e => { const x = e.target.closest('[data-wf]'); if (!x) return; st.f = x.dataset.wf; $('#wF').querySelectorAll('button').forEach(y => y.classList.toggle('on', y === x)); draw(); };
+    $('#wQ').oninput = e => { st.q = e.target.value; draw(); };
+    const search = () => { const q = $('#wQ').value.trim(); if (q.length < 2) { toast('Type at least two letters'); return; } st.find = q; st.q = ''; load(); };
+    $('#wQ').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); search(); } };
+    $('#wFind').onclick = search;
+    $('#wR').onchange = e => { st.range = e.target.value; load(); };
+    $('#wRef').onclick = () => load();
+    $('#wBox').onclick = async () => { const n = await askText('Name of the new box', 'Object'); if (n) act('newbox', 0, n); };
+    run('CompanionMenusToHud', ['ask']).then(v => { const x = $('#wHud'); if (x) x.checked = v === 'on'; }).catch(() => { const x = $('#wHud'); if (x) x.disabled = true; });
+    $('#wHud').onchange = async e => { try { const v = await run('CompanionMenusToHud', [e.target.checked ? 'on' : 'off']); toast(v === 'on' ? 'Object menus also go to your HUD' : 'Object menus only here in the app'); } catch (er) { fail(er); } };
+    stopWorldTimer();
+    worldTimer = setInterval(() => load(true), 8000);
+    await load();
+  }
+
+  // ---------- Menus that objects send the bot (llDialog, llTextBox, permissions, links) ----------
+  // shown like a viewer's blue menus, top right, for the bot that is open; answered from here
+  const PERM_TEXT = { Debit: 'take Linden dollars from the bot', TakeControls: 'take the bot\'s controls', RemapControls: 'remap the bot\'s controls', TriggerAnimation: 'animate the bot', Attach: 'attach to the bot', ReleaseOwnership: 'release its ownership', ChangeLinks: 'change its links', ChangeJoints: 'change joints', ChangePermissions: 'change permissions', TrackCamera: 'track the bot\'s camera', ControlCamera: 'control the bot\'s camera', Teleport: 'teleport the bot' };
+  const menuGone = new Set();
+  let menuBusy = false;
+  function menuStack() {
+    let s = document.getElementById('menuStack');
+    if (!s) { s = document.createElement('div'); s.id = 'menuStack'; document.body.appendChild(s); }
+    return s;
+  }
+  // llDialog buttons fill rows of three from the bottom left, as viewers show them
+  function dialogRows(btns) {
+    const rows = [];
+    for (let i = 0; i < btns.length; i += 3) rows.push(btns.slice(i, i + 3));
+    return rows.reverse();
+  }
+  async function pollMenus() {
+    const b = bot(), s = menuStack();
+    if (!b || b.state !== 'online') { s.innerHTML = ''; s.dataset.bot = ''; return; }
+    if (menuBusy) return;
+    menuBusy = true;
+    try {
+      const r = await rpc('bot.run', b.id, 'CompanionMenus', []);
+      if (!r || r.ok === false) return;
+      const list = JSON.parse(r.reply || '[]').filter(m => !menuGone.has(b.id + ':' + m.id));
+      if (s.dataset.bot !== b.id) { s.innerHTML = ''; s.dataset.bot = b.id; }
+      const want = new Set(list.map(m => String(m.id)));
+      s.querySelectorAll('[data-mid]').forEach(el => { if (!want.has(el.dataset.mid) && !el.contains(document.activeElement)) el.remove(); });
+      list.forEach(m => { if (!s.querySelector(`[data-mid="${m.id}"]`)) s.appendChild(menuCard(b, m)); });
+    } catch { } finally { menuBusy = false; }
+  }
+  function menuCard(b, m) {
+    const d = document.createElement('div');
+    d.className = 'mcard';
+    d.dataset.mid = m.id;
+    const head = `<div class="mh"><b>${m.kind === 'permission' ? '🔐' : m.kind === 'url' ? '🔗' : '📋'} ${esc(m.object || 'Object')}</b><span class="grow"></span><button class="x" data-ans="!!close!!" title="Ignore">✕</button></div>
+      <div class="muted small">${esc(b.label)}${m.owner ? ' · owner ' + esc(m.owner) : ''}</div>`;
+    let body = '';
+    if (m.kind === 'menu') body = `<div class="mmsg">${esc(m.message)}</div><div class="mbtns">${dialogRows(m.buttons).map(row => row.map(t => `<button class="btn sm" data-ans="${esc(t)}">${esc(t)}</button>`).join('')).join('')}</div>`;
+    else if (m.kind === 'text') body = `<div class="mmsg">${esc(m.message)}</div><div class="row" style="gap:6px"><input class="in w" data-tx placeholder="Your answer – Enter sends"><button class="btn sm pri" data-send>Send</button></div>`;
+    else if (m.kind === 'permission') body = `<div class="mmsg">It asks to ${esc((m.perms || []).map(p => PERM_TEXT[p] || p).join(', '))}.</div>${m.debit ? '<div class="mmsg" style="color:var(--bad,#e66)">⚠ With this it can take the bot\'s Linden dollars. Only allow it for something you trust.</div>' : ''}<div class="mbtns"><button class="btn sm ${m.debit ? '' : 'pri'}" data-ans="yes">Allow</button><button class="btn sm" data-ans="no">Refuse</button></div>`;
+    else body = `<div class="mmsg">${esc(m.message)}</div><div class="small" style="word-break:break-all">${esc(m.url)}</div><div class="mbtns"><button class="btn sm pri" data-open>Open in the browser</button></div>`;
+    d.innerHTML = head + body;
+    const answer = async a => {
+      menuGone.add(b.id + ':' + m.id); d.remove();
+      try { const r = await rpc('bot.run', b.id, 'CompanionMenuAnswer', [String(m.id), a]); if (!r || r.ok === false) throw new Error((r && r.reply) || 'failed'); if (a !== '!!close!!') toast(r.reply); }
+      catch (er) { fail(er); }
+    };
+    d.onclick = e => {
+      const x = e.target.closest('[data-ans]'); if (x) { answer(x.dataset.ans); return; }
+      if (e.target.closest('[data-send]')) { answer(d.querySelector('[data-tx]').value); return; }
+      if (e.target.closest('[data-open]')) { rpc('openUrl', m.url).catch(fail); answer('!!close!!'); }
+    };
+    const tx = d.querySelector('[data-tx]');
+    if (tx) tx.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); answer(tx.value); } };
+    return d;
+  }
+  setInterval(pollMenus, 2000);
+
+  // ---------- Inventory ----------
+  // the bot's inventory like a viewer's: folders, search, what it wears, and the usual actions on items and folders
+  const INV_ICON = { Object: '📦', Attachment: '📦', Wearable: '👕', Notecard: '📝', LSL: '📜', Texture: '🖼', Snapshot: '🖼', Sound: '🔊', Animation: '🏃', Gesture: '👋', Landmark: '📍', CallingCard: '🪪', Settings: '🌤', Material: '🎨', link: '🔗' };
+  async function renderInventory(b) {
+    const c = $('#content');
+    if (b.state !== 'online') { c.innerHTML = '<p class="muted">Start the bot to see its inventory.</p>'; return; }
+    ui.inv = ui.inv || {};
+    const st = ui.inv[b.id] = ui.inv[b.id] || { folder: '', view: 'folder', cut: null };
+    c.innerHTML = `<div class="row" style="align-items:center;gap:6px;flex-wrap:wrap">
+        <div class="seg"><button id="invVF" class="${st.view === 'folder' ? 'on' : ''}">📁 Folders</button><button id="invVW" class="${st.view === 'worn' ? 'on' : ''}">👕 Worn</button><button id="invVT" class="${st.view === 'trash' ? 'on' : ''}">🗑 Trash</button><button id="invVO" class="${st.view === 'outfits' ? 'on' : ''}">👗 Outfits</button></div>
+        <input class="in" id="invQ" placeholder="Search the whole inventory – Enter" style="max-width:280px" value="${esc(st.q || '')}">
+        <span class="grow"></span>
+        <span id="invCut" class="small"></span>
+        <button class="btn sm" id="invNew" title="A new folder, notecard or script here">＋ New ▾</button>
+        <button class="btn sm" id="invRef">⟳</button></div>
+      <div id="invPath" class="small" style="margin:8px 0 4px"></div>
+      <div id="invInfo" class="muted small"></div>
+      <table class="tbl"><tbody id="invBody"></tbody></table>`;
+    const run = async (cmd, args) => { const r = await rpc('bot.run', b.id, cmd, args); if (!r || r.ok === false) throw new Error((r && r.reply) || 'failed'); return r.reply; };
+    const info = t => { $('#invInfo').textContent = t || ''; };
+    if (st.view === 'outfits') {
+      // the outfit gallery: My Outfits as cards with pictures kept on this PC (paste with Ctrl+V)
+      ['#invQ', '#invNew', '#invCut'].forEach(s => $(s).classList.add('hidden'));
+      $('#invBody').closest('table').outerHTML = '<div class="ogrid" id="oGrid"></div>';
+      $('#invPath').innerHTML = '<button class="btn sm pri" id="oSave" data-needs-online title="Makes a new outfit in My Outfits from what the bot wears now (links, as a viewer does)">＋ Save what the bot wears…</button> <span class="muted small">Click a card, then Ctrl+V pastes a picture onto it.</span>';
+      let outfits = [], sel = st.outfitSel || '';
+      const pics = {};
+      const card = o => `<div class="ocard ${o.id === sel ? 'sel' : ''}" data-oc="${esc(o.id)}" title="${esc(o.name)}">
+          <div class="opic" data-pic="${esc(o.id)}">${pics[o.id] ? `<img alt="" src="${pics[o.id]}">` : '<span>👗</span>'}</div>
+          <div class="oname">${o.current ? '<span class="pill online" style="padding:0 6px">worn</span> ' : ''}${esc(o.name)}</div>
+          <div class="obtns"><button class="btn sm pri" data-ow="${esc(o.id)}">Wear</button><button class="btn sm" data-oadd="${esc(o.id)}" title="Add to what the bot wears">➕</button><button class="btn sm" data-om2="${esc(o.id)}">⋯</button></div></div>`;
+      const draw = () => {
+        $('#oGrid').innerHTML = outfits.map(card).join('') || '<p class="muted">No outfits in My Outfits yet – wear something and press "Save what the bot wears".</p>';
+        info(outfits.length ? `${outfits.length} outfits` : '');
+      };
+      const loadPics = async () => {
+        for (const o of outfits) {
+          if (o.id in pics) continue;
+          try { pics[o.id] = await rpc('outfit.image', b.id, o.id) || ''; } catch { pics[o.id] = ''; }
+          if (pics[o.id]) { const p = document.querySelector(`[data-pic="${o.id}"]`); if (p) p.innerHTML = `<img alt="" src="${pics[o.id]}">`; }
+        }
+      };
+      const loadOutfits = async () => {
+        info('Asking Second Life…');
+        try { const r = JSON.parse(await run('CompanionOutfitList', [])); outfits = r.outfits || []; draw(); loadPics(); }
+        catch (er) { info('Could not read the outfits: ' + er.message); }
+      };
+      // a picture (file or pasted) → at most 512 px JPEG → saved on this PC for this outfit
+      const setPic = (id, file) => new Promise(res => {
+        if (!file || !file.type.startsWith('image/')) { toast('That is not a picture', 'bad'); return res(); }
+        const img = new Image(), url = URL.createObjectURL(file);
+        img.onload = async () => {
+          URL.revokeObjectURL(url);
+          const k = Math.min(1, 512 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+          cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+          const g = cv.getContext('2d'); g.fillStyle = '#222'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(img, 0, 0, cv.width, cv.height);
+          const data = cv.toDataURL('image/jpeg', 0.86);
+          try { await rpc('outfit.setImage', b.id, id, data); pics[id] = data; draw(); toast('Picture saved'); } catch (er) { fail(er); }
+          res();
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); toast('That picture could not be read', 'bad'); res(); };
+        img.src = url;
+      });
+      const pickFile = id => { const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.onchange = () => setPic(id, f.files[0]); f.click(); };
+      const imageOf = e => { for (const it of (e.clipboardData || e.dataTransfer || {}).items || []) if (it.kind === 'file' && it.type.startsWith('image/')) return it.getAsFile(); return null; };
+      const onPaste = e => {
+        if (!$('#oGrid')) { document.removeEventListener('paste', onPaste); return; }
+        if (openDialogs.size || e.target.closest && e.target.closest('input,textarea')) return;
+        const f = imageOf(e); if (!f) return;
+        e.preventDefault();
+        if (!sel) { toast('Click the outfit the picture is for first'); return; }
+        setPic(sel, f);
+      };
+      if (renderInventory.paste) document.removeEventListener('paste', renderInventory.paste);
+      renderInventory.paste = onPaste;
+      document.addEventListener('paste', onPaste);
+      const grid = $('#oGrid');
+      grid.ondragover = e => { if (e.target.closest('[data-oc]')) e.preventDefault(); };
+      grid.ondrop = e => { const c2 = e.target.closest('[data-oc]'); if (!c2) return; e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setPic(c2.dataset.oc, f); };
+      const wearDo = async (action, o) => { try { toast(await run('CompanionInvDo', [action, o.id, 'none'])); setTimeout(loadOutfits, 2500); } catch (er) { fail(er); } };
+      grid.onclick = e => {
+        const c2 = e.target.closest('[data-oc]'); if (!c2) return;
+        const o = outfits.find(x => x.id === c2.dataset.oc); if (!o) return;
+        sel = st.outfitSel = o.id;
+        grid.querySelectorAll('.ocard').forEach(x => x.classList.toggle('sel', x === c2));
+        if (e.target.closest('[data-ow]')) { wearDo('wear', o); return; }
+        if (e.target.closest('[data-oadd]')) { wearDo('add', o); return; }
+        const mb = e.target.closest('[data-om2]'); if (!mb) return;
+        showMenu(mb, [{ hd: o.name },
+          { t: '👗 Wear (replaces the outfit)', f: () => wearDo('wear', o) },
+          { t: '➕ Add (keeps what is worn)', f: () => wearDo('add', o) },
+          { t: '➖ Take it off', f: () => wearDo('remove', o) },
+          { t: '📁 Show what is in it', f: () => { st.view = 'folder'; st.folder = o.id; renderInventory(b); } },
+          { t: '🖼 Picture from a file…', f: () => pickFile(o.id) },
+          { t: '📋 Paste a picture (Ctrl+V)', f: () => toast('Press Ctrl+V now – the picture goes onto "' + o.name + '"') },
+          ...(pics[o.id] ? [{ t: '✕ Remove the picture', f: async () => { try { await rpc('outfit.setImage', b.id, o.id, ''); pics[o.id] = ''; draw(); } catch (er) { fail(er); } } }] : []),
+          { t: '✎ Rename…', f: async () => { const n = await askText('New name', o.name); if (n && n !== o.name) { try { toast(await run('CompanionInvDo', ['rename', o.id, n])); setTimeout(loadOutfits, 1200); } catch (er) { fail(er); } } } },
+          { t: '🗑 Delete the outfit (to the Trash)', f: () => confirmDlg('Delete "' + o.name + '"?', 'The outfit folder goes to the bot\'s Trash. The things in it stay where they are – an outfit holds links to them.', 'Delete', async () => { try { toast(await run('CompanionInvDo', ['trash', o.id, 'none'])); setTimeout(loadOutfits, 1200); } catch (er) { fail(er); } }) }]);
+      };
+      $('#oSave').onclick = async () => {
+        const n = await askText('Name of the new outfit', 'Outfit ' + new Date().toLocaleDateString());
+        if (!n) return;
+        info('Saving…');
+        try { toast(await run('CompanionOutfitSave', [n])); setTimeout(loadOutfits, 1500); } catch (er) { info(''); fail(er); }
+      };
+      $('#invRef').onclick = () => { Object.keys(pics).forEach(k => delete pics[k]); loadOutfits(); };
+      $('#invVF').onclick = () => { st.view = 'folder'; renderInventory(b); };
+      $('#invVW').onclick = () => { st.view = 'worn'; renderInventory(b); };
+      $('#invVT').onclick = () => { st.view = 'trash'; renderInventory(b); };
+      $('#invVO').onclick = () => renderInventory(b);
+      updateEnabled(b);
+      loadOutfits();
+      return;
+    }
+    let cur = null;
+    const showCut = () => {
+      $('#invCut').innerHTML = st.cut ? `✂ ${esc(st.cut.name)} <button class="btn sm" id="invPaste">Move here</button> <button class="btn sm" id="invUncut" title="Forget">✕</button>` : '';
+      if (!st.cut) return;
+      $('#invPaste').onclick = async () => { if (!cur) return; try { toast(await run('CompanionInvDo', ['move', st.cut.id, cur.id])); st.cut = null; showCut(); setTimeout(load, 800); } catch (er) { fail(er); } };
+      $('#invUncut').onclick = () => { st.cut = null; showCut(); };
+    };
+    const badge = it => (it.worn ? ` <span class="pill online" style="padding:0 6px">${it.worn === 'worn' ? 'worn' : 'on ' + esc(it.worn)}</span>` : '')
+      + (!it.copy || !it.mod || !it.trans ? ` <span class="muted small" title="What the bot may do with it">${[!it.copy && 'no copy', !it.mod && 'no modify', !it.trans && 'no transfer'].filter(Boolean).join(' · ')}</span>` : '');
+    const itemRow = (it, extra) => `<tr data-i="${esc(it.id)}"><td style="width:28px">${INV_ICON[it.kind] || '·'}</td><td>${esc(it.name)}${badge(it)}${extra || ''}</td><td style="text-align:right;white-space:nowrap"><button class="btn sm" data-m="${esc(it.id)}">⋯</button></td></tr>`;
+    const folderRow = f => `<tr data-f="${esc(f.id)}" style="cursor:pointer"><td style="width:28px">📁</td><td><b>${esc(f.name)}</b>${f.type && f.type !== 'None' ? ' <span class="muted small">system</span>' : ''}</td><td style="text-align:right"><button class="btn sm" data-fm="${esc(f.id)}">⋯</button></td></tr>`;
+    let items = {}, folders = {};
+    async function load() {
+      info('Asking Second Life…');
+      try {
+        if (st.view === 'worn') {
+          const w = JSON.parse(await run('CompanionInvWorn', []));
+          cur = null; $('#invPath').textContent = 'What the bot wears now';
+          items = {};
+          const rows = w.wearables.map(x => { items[x.id] = { id: x.id, name: x.name, kind: 'Wearable', worn: 'worn', copy: true, mod: true, trans: true }; return itemRow(items[x.id], ` <span class="muted small">${esc(x.type)}</span>`); })
+            .concat(w.attachments.map(x => { items[x.id] = { id: x.id, name: x.name, kind: 'Object', worn: x.point, copy: true, mod: true, trans: true }; return itemRow(items[x.id]); }));
+          $('#invBody').innerHTML = rows.join('') || '<tr><td class="muted">Nothing worn (still loading?)</td></tr>';
+          info(`${w.wearables.length} clothing / body parts · ${w.attachments.length} attachments`);
+          return;
+        }
+        if (st.view === 'search') {
+          const r = JSON.parse(await run('CompanionInvSearch', [st.q]));
+          cur = null; $('#invPath').innerHTML = `Search: <b>${esc(st.q)}</b>`;
+          items = {}; folders = {};
+          $('#invBody').innerHTML = r.hits.map(h => h.isFolder ? (folders[h.id] = { id: h.id, name: h.name }, folderRow(h).replace('</b>', `</b> <span class="muted small">in ${esc(h.folderName)}</span>`))
+            : (items[h.item.id] = Object.assign({ folder: h.folder }, h.item), itemRow(h.item, ` <span class="muted small">in <a href="#" data-go="${esc(h.folder)}">${esc(h.folderName)}</a></span>`))).join('') || '<tr><td class="muted">Nothing found</td></tr>';
+          info(`${r.hits.length} found${r.complete ? '' : ' (search stopped early – narrow it down)'}`);
+          return;
+        }
+        let fid = st.folder;
+        if (st.view === 'trash') { if (!st.trash) { const top = JSON.parse(await run('CompanionInvList', [''])); st.trash = top.trash; } fid = st.trash; }
+        const r = JSON.parse(await run('CompanionInvList', [fid || '']));
+        cur = r; if (!st.trash) st.trash = r.trash;
+        if (st.view === 'folder') st.folder = r.id;
+        $('#invPath').innerHTML = r.path.map((p, i) => i === r.path.length - 1 ? `<b>${esc(p.name)}</b>` : `<a href="#" data-go="${esc(p.id)}">${esc(p.name)}</a>`).join(' › ');
+        items = {}; folders = {};
+        r.items.forEach(x => items[x.id] = x); r.folders.forEach(f => folders[f.id] = f);
+        $('#invBody').innerHTML = r.folders.map(folderRow).join('') + r.items.map(x => itemRow(x)).join('') || '<tr><td class="muted">Empty</td></tr>';
+        info(`${r.folders.length} folders · ${r.items.length} items` + (st.view === 'trash' && (r.folders.length || r.items.length) ? ' · ⋯ on an entry brings it back' : ''));
+        if (st.view === 'trash') $('#invPath').innerHTML += ' <button class="btn sm danger" id="invEmpty">Empty the Trash…</button>';
+        const e = $('#invEmpty'); if (e) e.onclick = () => confirmDlg('Empty the Trash', 'Everything in the bot\'s Trash will be deleted for good.', 'Empty it', async () => { try { toast(await run('CompanionInvDo', ['emptytrash', 'none', 'none'])); setTimeout(load, 1000); } catch (er) { fail(er); } });
+      } catch (er) { info('Could not read the inventory: ' + er.message); }
+    }
+    // puts an inventory item into one of the objects nearby that the bot may change
+    async function putInto(it) {
+      let objs;
+      try { objs = (JSON.parse(await run('CompanionNearby', ['20', 'none'])).objects || []).filter(o => o.mine || o.modify); } catch (er) { fail(er); return; }
+      if (!objs.length) { toast('No object within 20 m that the bot may change', 'bad'); return; }
+      dialog('Put ' + it.name + ' into…', `<table class="tbl">${objs.map(o => `<tr><td><a href="#" data-pi="${o.lid}">${esc(o.name || '(no name)')}</a></td><td class="small muted">${o.dist} m</td></tr>`).join('')}</table>`, [{ t: 'Cancel', f: c => c() }], { wide: true });
+      $('#dlgHost').querySelectorAll('[data-pi]').forEach(a => a.onclick = async e => {
+        e.preventDefault();
+        [...openDialogs].pop()();
+        try { toast(await run('CompanionTaskDo', ['add', a.dataset.pi, it.id, 'none'])); } catch (er) { fail(er); }
+      });
+    }
+    const doIt = async (action, id, arg, reload) => { try { toast(await run('CompanionInvDo', [action, id, arg || 'none'])); if (reload !== false) setTimeout(load, 1200); } catch (er) { fail(er); } };
+    const give = (anchor, id) => showMenu(anchor, [{ hd: 'Give to' }].concat((b.masters || []).map(n => ({ t: n, f: () => doIt('give', id, n, false) })),
+      [{ t: 'Someone else…', f: async () => { const who = await askText('Give to (avatar name or key)', ''); if (who) doIt('give', id, who, false); } }]));
+    function itemMenu(anchor, it) {
+      const m = [{ hd: it.name }];
+      const wearable = ['Object', 'Attachment', 'Wearable'].includes(it.kind) || (it.kind === 'link');
+      if (st.view === 'trash') m.push({ t: '↩ Bring back', f: () => doIt('restore', it.id) });
+      else {
+        if (wearable) {
+          if (it.kind !== 'Wearable') m.push({ t: '➕ Add (keep what is worn)', f: () => doIt('add', it.id) });
+          m.push({ t: it.kind === 'Wearable' ? '👕 Wear' : '🔁 Wear (replace on that point)', f: () => doIt('wear', it.id) });
+          if (it.worn) m.push({ t: '➖ Take off', f: () => doIt('remove', it.id) });
+        }
+        if (it.kind === 'Object') {
+          m.push({ t: '📦 Rez in front of the bot', f: () => doIt('rez', it.id, 'front', false) });
+          m.push({ t: '📦 Rez on the ground (in front of the bot)', f: () => doIt('rez', it.id, 'ground', false) });
+          m.push({ t: '📦 Rez in front of you', f: () => doIt('rez', it.id, 'me', false) });
+          m.push({ t: '📦 Rez at a place in the region…', f: async () => { const v = await askText('Where in the region? x, y (on the ground) or x, y, z', ''); if (v) doIt('rez', it.id, v, false); } });
+        }
+        if (it.kind === 'Notecard' || (it.kind === 'LSL' && it.copy && it.mod && it.trans)) m.push({ t: it.mod ? (it.kind === 'LSL' ? '✎ Open the script' : '✎ Open (read / edit)') : '📝 Read', f: async () => {
+          try {
+            const t = await run('CompanionInvDo', ['read', it.id, 'none']);
+            textEditor(it.name, t, { script: it.kind === 'LSL', save: it.mod ? txt => run('CompanionInvSave', [it.id, txt === '' ? 'none' : txt]) : null });
+          } catch (er) { fail(er); } } });
+        if (st.view !== 'trash') m.push({ t: '📥 Put into an object nearby…', f: () => putInto(it) });
+        if (it.kind === 'Sound') {
+          m.push({ t: '🎧 Listen here (on this PC)', f: async () => { try { info('Getting the sound…'); const d = await run('CompanionInvDo', ['sound', it.id, 'none']); info(''); dialog('🔊 ' + it.name, `<audio controls autoplay style="width:100%" src="data:audio/ogg;base64,${d}"></audio>`, [{ t: 'Close', f: c => c() }]); } catch (er) { info(''); fail(er); } } });
+          m.push({ t: '🔊 Play in-world (at the bot)', f: () => doIt('play', it.id, '', false) });
+        }
+        if (it.kind === 'Animation') {
+          m.push({ t: '▶ Play on the bot', f: () => doIt('play', it.id, '', false) });
+          m.push({ t: '■ Stop it', f: () => doIt('stop', it.id, '', false) });
+        }
+        if (it.kind === 'Gesture') m.push({ t: '▶ Play the gesture', f: () => doIt('play', it.id, '', false) });
+        if (it.kind === 'Texture' || it.kind === 'Snapshot') m.push({ t: '🖼 Show the picture', f: async () => { try { info('Getting the picture…'); const d = await run('CompanionInvDo', ['image', it.id, 'none']); info(''); dialog('🖼 ' + it.name, `<div style="text-align:center"><img alt="" style="max-width:100%;max-height:68vh;background:repeating-conic-gradient(#888 0 25%,#666 0 50%) 0 0/16px 16px" src="data:image/png;base64,${d}"></div>`, [{ t: 'Close', f: c => c() }], { wide: true }); } catch (er) { info(''); fail(er); } } });
+        if (it.kind === 'Landmark') m.push({ t: '📍 Teleport the bot there', f: () => doIt('teleport', it.id, '', false) });
+        if (it.trans) m.push({ t: '🎁 Give…', f: () => give(anchor, it.id) });
+        if (it.mod !== false) m.push({ t: '✎ Rename…', f: async () => { const n = await askText('New name', it.name); if (n && n !== it.name) doIt('rename', it.id, n); } });
+        m.push({ t: '✂ Move… (then open the target folder)', f: () => { st.cut = { id: it.id, name: it.name }; showCut(); if (st.view !== 'folder') { st.view = 'folder'; renderInventory(b); } } });
+        if (it.folder) m.push({ t: '📁 Open its folder', f: () => { st.view = 'folder'; st.folder = it.folder; renderInventory(b); } });
+        m.push({ t: '🗑 Delete (to the Trash)', f: () => doIt('trash', it.id) });
+      }
+      m.push({ t: '📋 Copy its key', f: () => { navigator.clipboard.writeText(it.id); toast('Key copied'); } });
+      showMenu(anchor, m);
+    }
+    function folderMenu(anchor, f) {
+      const m = [{ hd: f.name }];
+      if (st.view === 'trash') m.push({ t: '↩ Bring back (to the top level)', f: () => doIt('restore', f.id) });
+      else if (f.id === st.trash) m.push({ t: '🗑 Open the Trash', f: () => { st.view = 'trash'; renderInventory(b); } });
+      else {
+        m.push({ t: '📂 Open', f: () => { st.view = 'folder'; st.folder = f.id; renderInventory(b); } });
+        m.push({ t: '➕ Add everything in it', f: () => doIt('add', f.id) });
+        m.push({ t: '🔁 Wear it (replaces the outfit)', f: () => doIt('wear', f.id) });
+        m.push({ t: '➖ Take off everything in it', f: () => doIt('remove', f.id) });
+        m.push({ t: '🎁 Give…', f: () => give(anchor, f.id) });
+        if (!f.type || f.type === 'None') {
+          m.push({ t: '✎ Rename…', f: async () => { const n = await askText('New name', f.name); if (n && n !== f.name) doIt('rename', f.id, n); } });
+          m.push({ t: '✂ Move… (then open the target folder)', f: () => { st.cut = { id: f.id, name: f.name }; showCut(); } });
+          m.push({ t: '🗑 Delete (to the Trash)', f: () => doIt('trash', f.id) });
+        }
+      }
+      m.push({ t: '📋 Copy its key', f: () => { navigator.clipboard.writeText(f.id); toast('Key copied'); } });
+      showMenu(anchor, m);
+    }
+    $('#invBody').onclick = e => {
+      const go = e.target.closest('[data-go]');
+      if (go) { e.preventDefault(); st.view = 'folder'; st.folder = go.dataset.go; renderInventory(b); return; }
+      const mb = e.target.closest('[data-m]'); if (mb) { itemMenu(mb, items[mb.dataset.m]); return; }
+      const fb = e.target.closest('[data-fm]'); if (fb) { folderMenu(fb, folders[fb.dataset.fm]); return; }
+      const fr = e.target.closest('[data-f]'); if (fr && st.view !== 'trash') { st.view = fr.dataset.f === st.trash ? 'trash' : 'folder'; if (st.view === 'folder') st.folder = fr.dataset.f; renderInventory(b); }
+    };
+    $('#invPath').onclick = e => { const go = e.target.closest('[data-go]'); if (go) { e.preventDefault(); st.view = 'folder'; st.folder = go.dataset.go; renderInventory(b); } };
+    $('#invVF').onclick = () => { st.view = 'folder'; renderInventory(b); };
+    $('#invVW').onclick = () => { st.view = 'worn'; renderInventory(b); };
+    $('#invVT').onclick = () => { st.view = 'trash'; renderInventory(b); };
+    $('#invVO').onclick = () => { st.view = 'outfits'; renderInventory(b); };
+    $('#invRef').onclick = load;
+    $('#invQ').onkeydown = e => { if (e.key === 'Enter') { const q = e.target.value.trim(); if (q.length < 2) { toast('Type at least two letters'); return; } st.q = q; st.view = 'search'; renderInventory(b); } };
+    $('#invNew').onclick = () => {
+      if (st.view !== 'folder' || !cur) { toast('Open the folder where the new one should go'); return; }
+      const mk = async (kind, def) => {
+        const n = await askText('Name of the new ' + kind, def); if (!n) return;
+        try { const r = JSON.parse(await run('CompanionInvNew', [kind, cur.id, n])); toast('Made ' + r.name + (r.note ? ' – ' + r.note : '')); setTimeout(load, 1200);
+          if (kind === 'script' || kind === 'notecard') { const t = await run('CompanionInvDo', ['read', r.id, 'none']).catch(() => kind === 'script' ? '' : ''); textEditor(r.name, t, { script: kind === 'script', save: txt => run('CompanionInvSave', [r.id, txt === '' ? 'none' : txt]) }); }
+        } catch (er) { fail(er); }
+      };
+      showMenu($('#invNew'), [{ hd: 'New in ' + (cur.name || 'this folder') },
+        { t: '📁 Folder', f: async () => { const n = await askText('Name of the new folder', 'New folder'); if (n) doIt('newfolder', cur.id, n); } },
+        { t: '📝 Notecard', f: () => mk('notecard', 'New Note') },
+        { t: '📜 Script', f: () => mk('script', 'New Script') }]);
+    };
+    showCut();
+    load();
+  }
+
   // ---------- Groups ----------
   // the bot's groups, like a viewer's Groups window: active group and title, notices, invite, members and roles
   async function grpRun(b, cmd, args) {
@@ -1199,11 +1754,14 @@
         <label class="switch" style="margin-top:6px"><input type="checkbox" id="fTp" ${!b || b.acceptTeleports ? 'checked' : ''}><span class="tr"></span>Accept teleport offers from these avatars</label><br>
         <label class="switch" style="margin-top:6px"><input type="checkbox" id="fInv" ${!b || b.acceptInventory ? 'checked' : ''}><span class="tr"></span>Accept items (e.g. outfits) from these avatars</label><br>
         <label class="switch" style="margin-top:6px" title="Off: when someone pulls the bot into a conference (an ad-hoc group IM), it leaves at once; nothing is shown or announced"><input type="checkbox" id="fConf" ${b && b.joinConferences === true ? 'checked' : ''}><span class="tr"></span>Take part in conference chats (off = leave them at once)</label></div></div>
+      <div class="row"><label>Logs in at</label><span class="seg" id="fStart">${[['last', 'Last place'], ['home', 'Home'], ['place', 'A place']].map(([k, t]) => `<button type="button" data-v="${k}" class="${startKind(b) === k ? 'on' : ''}">${t}</button>`).join('')}</span>
+        <div class="combo ${startKind(b) === 'place' ? '' : 'hidden'}" id="fStartBox" style="max-width:380px;margin-left:8px"><input class="in" id="fStartUrl" placeholder="SLURL of the place" value="${esc(startKind(b) === 'place' ? b.startLocation : '')}"><button class="dd" id="fStartDd" title="Saved and recent places">▾</button></div></div>
       <div class="row"><label>Hover height</label><input class="in" id="fHover" type="number" step="0.05" min="-2" max="2" style="width:100px" value="${b ? b.hoverHeight : 0}">
         <span class="chips">${[0, 0.1, 0.2, 0.3].map(v => `<span class="chip" data-hover="${v}">${v}</span>`).join('')}</span><span class="muted small" style="margin-left:8px">m · a running bot changes at once</span></div>
       <div class="err" id="fErr"></div>`;
   }
 
+  function startKind(b) { const v = (b && b.startLocation) || 'last'; return v === 'last' || v === 'home' ? v : 'place'; }
   function wireBotForm(root, b, onChange) {
     let masters = b ? (b.masters || []).slice() : [];
     const draw = () => {
@@ -1231,6 +1789,15 @@
       { t: 'OSgrid (http://login.osgrid.org/)', f: () => { $('#fUri', root).value = 'http://login.osgrid.org/'; onChange(); } },
     ]);
     root.querySelectorAll('[data-hover]').forEach(x => x.onclick = () => { $('#fHover', root).value = x.dataset.hover; onChange(); });
+    $('#fStart', root).onclick = e => {
+      const v = e.target.closest('[data-v]'); if (!v) return;
+      $('#fStart', root).querySelectorAll('button').forEach(x => x.classList.toggle('on', x === v));
+      $('#fStartBox', root).classList.toggle('hidden', v.dataset.v !== 'place');
+      if (v.dataset.v === 'place') $('#fStartUrl', root).focus();
+      if (v.dataset.v !== 'place' || $('#fStartUrl', root).value.trim()) onChange();
+    };
+    $('#fStartUrl', root).addEventListener('change', onChange);
+    $('#fStartDd', root).onclick = e => placeMenu(e.currentTarget, u => { $('#fStartUrl', root).value = u; onChange(); }, b, $('#fStartUrl', root).value.trim());
     ['#fLabel', '#fUser', '#fUri', '#fHover'].forEach(s => $(s, root).addEventListener('input', onChange));
     ['#fAuto', '#fTp', '#fInv', '#fConf'].forEach(s => $(s, root).addEventListener('change', onChange));
     return () => ({
@@ -1245,6 +1812,7 @@
       acceptInventory: $('#fInv', root).checked,
       joinConferences: $('#fConf', root).checked,
       hoverHeight: $('#fHover', root).value,
+      startLocation: (() => { const k = ($('#fStart', root).querySelector('.on') || { dataset: { v: 'last' } }).dataset.v; return k === 'place' ? ($('#fStartUrl', root).value.trim() || 'last') : k; })(),
     });
   }
 
@@ -1294,7 +1862,8 @@
       if (navKind && !navClosing) navPush();
     };
     openDialogs.add(close);
-    const onKey = e => { if (e.key === 'Escape' && !(window.__notes && window.__notes.isOpen())) { e.stopPropagation(); close(); } };
+    // Esc closes only the topmost dialog (an editor opened from another dialog leaves that one open)
+    const onKey = e => { if (e.key === 'Escape' && !(window.__notes && window.__notes.isOpen()) && [...openDialogs].pop() === close) { e.stopPropagation(); close(); } };
     document.addEventListener('keydown', onKey, true);
     $('.x', ov).onclick = close;
     (buttons || []).forEach(bt => {
@@ -1316,6 +1885,16 @@
     });
     return { root: d, close };
   }
+  function askText(title, value) {
+    return new Promise(res => {
+      const d = dialog(title, `<input class="in w" id="askIn" value="${esc(value || '')}" style="width:100%">`, [
+        { t: 'Cancel', f: c => { c(); res(''); } },
+        { t: 'Save', cls: 'pri', f: c => { const v = $('#askIn', d.root).value.trim(); c(); res(v); } }]);
+      const i = $('#askIn', d.root); i.focus(); i.select();
+      i.addEventListener('keydown', e => { if (e.key === 'Enter') d.root.querySelector('.df .btn.pri').click(); });
+    });
+  }
+
   function confirmDlg(title, text, okText, f) {
     dialog(title, `<p>${esc(text)}</p>`, [{ t: 'Cancel', f: c => c() }, { t: okText, cls: 'danger', f: c => { c(); f(); } }]);
   }
@@ -1358,13 +1937,17 @@
       <div class="note">When someone writes to a bot, Windows shows a popup from the tray icon (click it to open that bot's Chat) and/or a short sound. Nothing is announced while you are looking at that bot's Chat.</div>
       <div class="ntable">
         <span></span><b>Popup</b><b>Sound</b>
-        <span>IMs to the bot (also group IMs and IMs from objects)</span>
+        <span>✉ IMs to the bot (also IMs from objects) <button class="btn sm" data-tsnd="im" title="Play this sound">▶</button></span>
         <label class="switch"><input type="checkbox" id="nImPop" ${s.notifyImPopup ? 'checked' : ''}><span class="tr"></span></label>
         <label class="switch"><input type="checkbox" id="nImSnd" ${s.notifyImSound ? 'checked' : ''}><span class="tr"></span></label>
-        <span>Local chat near the bot</span>
+        <span>👥 Group and conference chats <button class="btn sm" data-tsnd="group" title="Play this sound">▶</button></span>
+        <label class="switch"><input type="checkbox" id="nGrPop" ${s.notifyGroupPopup ? 'checked' : ''}><span class="tr"></span></label>
+        <label class="switch"><input type="checkbox" id="nGrSnd" ${s.notifyGroupSound ? 'checked' : ''}><span class="tr"></span></label>
+        <span>💬 Local chat near the bot <button class="btn sm" data-tsnd="local" title="Play this sound">▶</button></span>
         <label class="switch"><input type="checkbox" id="nLcPop" ${s.notifyLocalPopup ? 'checked' : ''}><span class="tr"></span></label>
         <label class="switch"><input type="checkbox" id="nLcSnd" ${s.notifyLocalSound ? 'checked' : ''}><span class="tr"></span></label>
       </div>
+      <div class="note">Each kind has its own sound. A busy group rings at most every 8 s, local chat every 15 s; IMs every time. The sounds can also be switched in the Chat section (🔔 buttons).</div>
       <div class="actions" style="margin-top:8px"><button class="btn" id="nTest">🔔 Test popup and sound</button></div>
       <h3 style="margin-top:18px">Updates</h3>
       <div class="note">Once a day AvieBoter asks GitHub (github.com/anderlejan/AvieBoter) whether there is a newer version of the app or of the HUD. Nothing else is sent. Updates keep your bots, passwords, people and chats; a newer HUD needs no app update – the bots hand it out and worn HUDs update themselves.</div>
@@ -1387,6 +1970,8 @@
     sw('#sWin', 'startWithWindows'); sw('#sTray', 'startInTray'); sw('#sBots', 'startBotsWithApp');
     sw('#sNotes', 'showNotesButton', () => $('#btnNotes').classList.toggle('hidden', !s.showNotesButton));
     sw('#nImPop', 'notifyImPopup'); sw('#nImSnd', 'notifyImSound'); sw('#nLcPop', 'notifyLocalPopup'); sw('#nLcSnd', 'notifyLocalSound');
+    sw('#nGrPop', 'notifyGroupPopup'); sw('#nGrSnd', 'notifyGroupSound');
+    r.querySelectorAll('[data-tsnd]').forEach(x => x.onclick = e => { e.preventDefault(); rpc('notify.test', x.dataset.tsnd).catch(fail); });
     $('#nTest', r).onclick = () => rpc('notify.test').catch(fail);
     $('#sClose', r).onclick = e => { const v = e.target.closest('[data-v]'); if (!v) return; s.closeAction = v.dataset.v; $('#sClose', r).querySelectorAll('button').forEach(x => x.classList.toggle('on', x === v)); rpc('setting', 'closeAction', s.closeAction).catch(fail); };
     const uShow = () => { const u = S.update || {}; $('#uState', r).textContent = updateText(u); $('#uHud', r).textContent = u.hud ? 'HUD handed out by the bots: ' + u.hud : ''; $('#uInst', r).classList.toggle('hidden', !u.available || u.status === 'installing' || /^downloading/.test(u.status || '')); };
@@ -1459,7 +2044,19 @@
       <p>Answers come back to the HUD's own web address in Second Life, so nothing on this PC is opened to the internet. The bot's control port listens only on this PC (127.0.0.1).</p>
       <h3>Groups</h3>
       <p>👥 Groups lists the bot's groups like a viewer's Groups window: ★ the active group (its tag shows over the bot), Activate or No active group, Notices and In profile switches, Leave…, and Join group with the key of an open group. "Members and more ▸" opens a group: the bot's title, Invite (with a role), group chat, a group notice, and the members (online first, filter, Online only) with ⋯ for an IM, the profile, giving or taking a role, or Eject. Buttons appear only where the bot's role in that group allows it. Group invitations to the bot wait under "Invitations" (with a Windows notice) until you Accept or Decline them.</p>
+      <h3>Nearby and menus</h3>
+      <p>🌍 Nearby lists the objects around the bot, nearest first – from 5 m to the whole region (further than 64 m the bot looks further for a few minutes, which takes a few seconds; the region sends what is within 256 m of the bot, so from a sky platform things far below may be missing): Typing in the name box filters the list; Enter searches every object in the range by name. 🪑 seats, 👆 touchable things, 🏷 things for sale. The buttons in a row touch it or sit on it; ⋯ also goes to it, tells about it, looks inside, and for the bot's own things takes it, wears it, renames it, deletes it to the bot's Trash or returns it to Lost and Found. Contents lists what is inside an object the bot may change: open and save notecards and scripts (scripts compile and show their errors), take things out, delete them, or make a new script or notecard inside. ＋ Box rezzes a new box. Return also works on other people's things where the bot is the land owner or an estate manager.</p>
+      <p>Menus, text boxes, permission questions and links that objects send the bot appear at the bottom right, like a viewer's blue menus – click a button, type an answer, or allow / refuse. ✕ ignores one; unanswered ones go away after 10 minutes. With "Menus on my HUD" (Nearby, on by default) they also pop up as a blue menu on the HUD of whoever uses the bot – answer there and the bot clicks it.</p>
+      <h3>Inventory</h3>
+      <p>🎒 Inventory shows the bot's folders, what it wears and its Trash, with a search over everything. ⋯ on an item: add or wear it, take it off, rez it in front of the bot, read notecards and full-permission scripts, open and edit notecards and scripts (＋ New ▾ makes a folder, notecard or script), rez objects in front of the bot, on the ground, in front of you or at a place, put things into an object nearby, listen to sounds here or play them in-world, play and stop animations and gestures on the bot, show pictures, teleport the bot to a landmark, give, rename, move or delete it. 👗 Outfits shows My Outfits as a gallery: wear, add, take off, rename or delete an outfit, save what the bot wears as a new one, and give each a picture – click the card and press Ctrl+V, drop a file on it, or choose a file. The pictures stay on this PC.</p>
+      <h3>Puppeteer</h3>
+      <p>Overview → 🕹 Puppeteer opens a small window that stays above other windows, also above your viewer: hold ▲ ▼ ↶ ↷ (or W A S D / the arrow keys) to walk and turn the bot, ◀ ▶ (Q / E) to step aside, ⤒ ⤓ (R / C) up and down, F to fly, Space or ■ to stop. 📷 turns on the camera of your HUD (1.6 or newer): your view stays behind the bot and looks the way it faces while you steer it – set distance, height, tilt and side in the HUD (More ▸ Cam ▸), where Cam OFF gives your camera back. 🗺 shows a map around the bot (off by default). The slider at the bottom makes the window see-through. Moving by hand ends following.</p>
+      <h3>Coming back</h3>
+      <p>A bot that lost its connection, or whose program or AvieBoter itself ended unexpectedly, comes back by itself (after 20 s, then 1, 2 and 5 minutes while Second Life cannot be reached) and does again what it did: it sits down on the same seat or follows the same person. "Reconnecting" shows the time of the next try; ■ Stop ends it. A bot stopped by you, logged off from the HUD, refused at login or logged in elsewhere is not brought back.</p>
       <h3>Undeform</h3>
+      <p>Sounds: IMs, group chats and local chat each have their own sound and their own switch – in Settings → Notifications and as the bell in each Chat filter (🔔 on, 🔕 off), so a busy local chat can be quiet while IMs still ring.</p>
+      <p>Places: Overview → Go to a place takes a SLURL, Region/x/y/z or just x y z in the bot's region. 🚶 Walk to walks when the place is near (a far place gets a teleport close by first); Teleport jumps there. ▾ lists where the bot is now, your saved places (☆ saves the one in the field) and recent ones. 🙋 Come to me brings the bot to you without a HUD: it walks or teleports when it can see you, else it sends you a teleport request – accept it in your viewer. ▾ next to it calls it to someone else.</p>
+      <p>Logging in: ✎ Bot settings → Logs in at: the last place, its home, or a place (a SLURL, also from your saved places). It applies at the next login.</p>
       <p>Overview → Undeform helps when an outfit change left the bot deformed: it stops every animation the bot plays and sends its appearance again, so viewers redraw it. While the bot sits it keeps its seat's animations (only the appearance is sent again) – stand it up first for a full undeform. A viewer that still shows it deformed keeps an old skeleton in memory: there, right-click the bot → Reset skeleton.</p>
       <h3>Commands</h3>
       <p>⌘ Commands lists everything SecondBot can do (about 190 commands), with a form for each. Money, Discord and service commands are switched off in this app; "Show all modules" lists them anyway.</p>

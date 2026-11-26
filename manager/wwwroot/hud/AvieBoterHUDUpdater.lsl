@@ -1,4 +1,4 @@
-// AvieBoter HUD updater 2 (script name "SL Bot HUD updater") - lets the paired bot update this HUD by itself. Keep this script in this prim (the ring).
+// AvieBoter HUD updater 3 (script name "SL Bot HUD updater") - lets the paired bot update this HUD by itself. Keep this script in this prim (the ring).
 // How it works: when the bot has a newer HUD, the HUD's core script tells this prim to accept scripts for a minute.
 // The bot's courier hands them over; this script checks that the paired bot created them, then loads each into the
 // main prim. Anything else dropped in is removed. Your pairings stay (they live in the HUD's linkset data).
@@ -45,7 +45,7 @@ default
             if (s != llGetScriptName() && llListFindList(queue, [s]) == -1)
             {
                 if (bot != NULL_KEY && llGetInventoryType(s) == INVENTORY_SCRIPT && llGetInventoryCreator(s) == bot
-                    && (s == "SL Bot HUD" || s == "SL Bot HUD menu"))
+                    && (s == "SL Bot HUD" || s == "SL Bot HUD menu" || s == "SL Bot HUD cam"))
                 {
                     queue += [s];
                     llSetTimerEvent(60.0);
@@ -77,7 +77,8 @@ default
             llRemoteLoadScriptPin(llGetLinkKey(LINK_ROOT), s, PIN, TRUE, 0);
             llRemoveInventory(s);
             done += [s];
-            if (llListFindList(done, ["SL Bot HUD"]) != -1 && llListFindList(done, ["SL Bot HUD menu"]) != -1) close();
+            if (llListFindList(done, ["SL Bot HUD"]) != -1 && llListFindList(done, ["SL Bot HUD menu"]) != -1
+                && llListFindList(done, ["SL Bot HUD cam"]) != -1) close();      // else the timer closes it (a courier without the cam)
             else next();
         }
     }

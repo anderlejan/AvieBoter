@@ -16,7 +16,8 @@ namespace AvieBoter.Core;
 /// </summary>
 public static class HudScripts
 {
-    public static readonly string[] Files = ["AvieBoterHUD.lsl", "AvieBoterHUDMenu.lsl", "AvieBoterHUDUpdater.lsl"];
+    public static readonly string[] Files = ["AvieBoterHUD.lsl", "AvieBoterHUDMenu.lsl", "AvieBoterHUDUpdater.lsl", "AvieBoterHUDCam.lsl"];
+    static readonly string[] Required = ["AvieBoterHUD.lsl", "AvieBoterHUDMenu.lsl", "AvieBoterHUDUpdater.lsl"];   // the camera came with HUD 1.6
     const string RawBase = "https://raw.githubusercontent.com/" + Updater.Repo + "/main/hud/";
 
     /// <summary>AVIEBOTER_HUD_URL (testing only): another folder URL holding hud.json and the scripts.</summary>
@@ -55,7 +56,7 @@ public static class HudScripts
         catch { return null; }
     }
 
-    static bool Complete(string dir) => Files.All(f => File.Exists(Path.Combine(dir, f)));
+    static bool Complete(string dir) => Required.All(f => File.Exists(Path.Combine(dir, f)));
 
     /// <summary>Puts the newest compatible set into DataDir\hud\current (at start and after a download).</summary>
     public static void Prepare()
@@ -114,7 +115,8 @@ public static class HudScripts
         var got = new Dictionary<string, byte[]>();
         foreach (var f in Files)
         {
-            string want = files.GetProperty(f).GetString() ?? "";
+            if (!files.TryGetProperty(f, out var wantEl)) { if (Required.Contains(f)) throw new InvalidDataException("hud.json lists no " + f); continue; }
+            string want = wantEl.GetString() ?? "";
             byte[] data = await Http.GetByteArrayAsync(Base + f + "?t=" + DateTime.UtcNow.Ticks, ct);
             if (Sha256Lf(data) != want.ToLowerInvariant()) throw new InvalidDataException(f + " does not match hud.json (try again later)");
             got[f] = data;

@@ -795,6 +795,23 @@
  },
  {
   "module": "CompanionBuild",
+  "name": "CompanionAnchor",
+  "type": "Do",
+  "about": "The bot's camera anchor: on = wear it (made once where the bot may build), off = take it off, ready = make sure the bot has one, empty = how it is",
+  "params": [
+   "state"
+  ],
+  "argHints": [
+   [
+    "state",
+    "on, off, ready or empty",
+    "Text",
+    ""
+   ]
+  ]
+ },
+ {
+  "module": "CompanionBuild",
   "name": "CompanionMakeHud",
   "type": "Do",
   "about": "Builds a new AvieBoter HUD (main prim + updater prim), gives it to an avatar and prepares the courier for updates",
@@ -1073,6 +1090,150 @@
   "argHints": []
  },
  {
+  "module": "CompanionInventory",
+  "name": "CompanionInvList",
+  "type": "Get",
+  "about": "A folder of the bot's inventory: its subfolders and items (worn ones marked); empty = the top level",
+  "params": [
+   "folder"
+  ],
+  "argHints": [
+   [
+    "folder",
+    "folder key, or empty for the top level",
+    "Text",
+    ""
+   ]
+  ]
+ },
+ {
+  "module": "CompanionInventory",
+  "name": "CompanionInvSearch",
+  "type": "Get",
+  "about": "Searches the bot's whole inventory (not the Trash) for items and folders whose name contains the text",
+  "params": [
+   "text"
+  ],
+  "argHints": [
+   [
+    "text",
+    "part of the name",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionInventory",
+  "name": "CompanionInvWorn",
+  "type": "Get",
+  "about": "What the bot wears now: attachments (with their points) and clothing / body parts",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionInventory",
+  "name": "CompanionInvNew",
+  "type": "Do",
+  "about": "Makes a new notecard or script in a folder of the bot's inventory",
+  "params": [
+   "kind",
+   "folder",
+   "name"
+  ],
+  "argHints": [
+   [
+    "kind",
+    "notecard or script",
+    "Text"
+   ],
+   [
+    "folder",
+    "folder key (none = Notecards / Scripts)",
+    "Text"
+   ],
+   [
+    "name",
+    "its name",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionInventory",
+  "name": "CompanionInvSave",
+  "type": "Do",
+  "about": "Saves the text of a notecard or a script in the bot's inventory (a script is compiled by the region)",
+  "params": [
+   "id",
+   "text"
+  ],
+  "argHints": [
+   [
+    "id",
+    "the item's key",
+    "Text"
+   ],
+   [
+    "text",
+    "the whole new text",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionInventory",
+  "name": "CompanionOutfitList",
+  "type": "Get",
+  "about": "The outfits in My Outfits for the app's outfit gallery: id, name, how many things, and which one is worn",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionInventory",
+  "name": "CompanionOutfitSave",
+  "type": "Do",
+  "about": "Saves what the bot wears now as a new outfit in My Outfits (links, like a viewer)",
+  "params": [
+   "name"
+  ],
+  "argHints": [
+   [
+    "name",
+    "the new outfit's name",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionInventory",
+  "name": "CompanionInvDo",
+  "type": "Do",
+  "about": "Does something with an inventory item or folder: add, wear, remove, rez, give, rename, move, trash, restore, newfolder, emptytrash, read, play, stop, sound, image, teleport",
+  "params": [
+   "action",
+   "id",
+   "arg"
+  ],
+  "argHints": [
+   [
+    "action",
+    "add (attach without replacing), wear (replace), remove (take off), rez, give, rename, move, trash, restore, newfolder, emptytrash, read (notecard / full-perm script), play (sound at the bot, animation, gesture), stop (animation), sound (the sound as base64 Ogg), image (a texture as base64 PNG), teleport (landmark)",
+    "Text"
+   ],
+   [
+    "id",
+    "item or folder key",
+    "Text"
+   ],
+   [
+    "arg",
+    "give: avatar name or key; rename/newfolder: the name; move: target folder key; else none",
+    "Text",
+    "none"
+   ]
+  ]
+ },
+ {
   "module": "CompanionPeople",
   "name": "CompanionRadar",
   "type": "Get",
@@ -1320,6 +1481,237 @@
     "replyto",
     "none or where to send the result",
     "SMART"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPuppet",
+  "name": "CompanionPuppetTrace",
+  "type": "Get",
+  "about": "Diagnostics for the Puppeteer: start records for 30 s what the bot sends and what the region reports about it; get returns it",
+  "params": [
+   "mode"
+  ],
+  "argHints": [
+   [
+    "mode",
+    "start or get",
+    "Text",
+    "get"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPuppet",
+  "name": "CompanionMove",
+  "type": "Do",
+  "about": "Moves the bot like a viewer's move controls. forward back left right turnleft turnright up down hold for 'ms'; stop, run, walk, fly, land, stand act at once",
+  "params": [
+   "action",
+   "ms"
+  ],
+  "argHints": [
+   [
+    "action",
+    "forward, back, left, right, turnleft, turnright, up, down, stop, run, walk, fly, land or stand",
+    "Text",
+    "forward"
+   ],
+   [
+    "ms",
+    "how long to hold it (100-3000 ms; repeat to keep going)",
+    "Number",
+    "500"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPuppet",
+  "name": "CompanionWalkTo",
+  "type": "Do",
+  "about": "Goes to a place: walks there when it is near in the bot's region, else teleports close and walks the rest",
+  "params": [
+   "place"
+  ],
+  "argHints": [
+   [
+    "place",
+    "SLURL, Region/x/y/z, or x y z in the bot's region",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPuppet",
+  "name": "CompanionComeTo",
+  "type": "Do",
+  "about": "Comes to a person: walks or teleports when they are near the bot, else asks them for a teleport offer (no HUD needed)",
+  "params": [
+   "avatar"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "name or UUID",
+    "Text"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionPuppet",
+  "name": "CompanionHudCam",
+  "type": "Do",
+  "about": "Switches the camera of a person's HUD (1.6+) on or off: it then watches the way the bot faces",
+  "params": [
+   "avatar",
+   "state"
+  ],
+  "argHints": [
+   [
+    "avatar",
+    "whose HUD (name or UUID; the HUD must have talked to the bot since it started)",
+    "Text"
+   ],
+   [
+    "state",
+    "on, off, or set:name=value for a camera setting (camd distance, camh height, camt tilt, cams side angle, caml lead in s, camp/camf lags; empty value = default)",
+    "Text",
+    "on"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionNearby",
+  "type": "Get",
+  "about": "Lists the objects around the bot (nearest first): name, owner, distance and what can be done with them",
+  "params": [
+   "range",
+   "find"
+  ],
+  "argHints": [
+   [
+    "range",
+    "metres around the bot: up to 64 at once; 96, 128 or 256 (= the whole region) make the bot look further for 3 minutes",
+    "Text",
+    "20"
+   ],
+   [
+    "find",
+    "only objects whose name (or description) has this text \u2013 searches everything in range, not just the nearest; empty or none = all",
+    "Text",
+    "none"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionObjectDo",
+  "type": "Do",
+  "about": "Does something with an object near the bot: touch, sit, stand, go, take, copy, wear, delete, return, info, contents",
+  "params": [
+   "action",
+   "localId",
+   "arg"
+  ],
+  "argHints": [
+   [
+    "action",
+    "touch, sit, stand, go (walk next to it), take (own: into inventory), copy (a copy into inventory), wear (own), delete (own or modifiable: to the Trash), return (to its owner), info, contents, rename, describe",
+    "Text"
+   ],
+   [
+    "localId",
+    "the object's local id (from CompanionNearby)",
+    "Number"
+   ],
+   [
+    "arg",
+    "rename: the new name; describe: the new description; else none",
+    "Text",
+    "none"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionTaskDo",
+  "type": "Do",
+  "about": "Works with what is inside an object: read or save a notecard / script, delete or take out an item, put an inventory item in, make a new script or notecard inside",
+  "params": [
+   "action",
+   "localId",
+   "itemId",
+   "arg"
+  ],
+  "argHints": [
+   [
+    "action",
+    "read, save, delete, take (into the bot's inventory), add (itemId = an item in the bot's inventory), newscript, newnote",
+    "Text"
+   ],
+   [
+    "localId",
+    "the object's local id",
+    "Number"
+   ],
+   [
+    "itemId",
+    "the item inside (or, for add, the inventory item; none for newscript / newnote)",
+    "Text"
+   ],
+   [
+    "arg",
+    "save: the whole text; newscript / newnote: the name; else none",
+    "Text",
+    "none"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionMenus",
+  "type": "Get",
+  "about": "The menus, text boxes, permission questions and links objects sent the bot that are not answered yet",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionMenusToHud",
+  "type": "Do",
+  "about": "Whether object menus are also shown on the HUD of the person who uses the bot (on / off / \\\"\\\" = ask)",
+  "params": [
+   "state"
+  ],
+  "argHints": [
+   [
+    "state",
+    "on, off or nothing to ask",
+    "Text",
+    ""
+   ]
+  ]
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionMenuAnswer",
+  "type": "Do",
+  "about": "Answers a menu (button), a text box (the text) or a permission question (yes / no); !!close!! ignores it",
+  "params": [
+   "id",
+   "answer"
+  ],
+  "argHints": [
+   [
+    "id",
+    "the menu's number from CompanionMenus",
+    "Number"
+   ],
+   [
+    "answer",
+    "the button, the text, yes / no, or !!close!! (= ignore, nothing is sent)",
+    "Text"
    ]
   ]
  },

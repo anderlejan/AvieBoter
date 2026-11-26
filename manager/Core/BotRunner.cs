@@ -17,7 +17,7 @@ public class BotRunner
     public BotProfile Profile { get; }
     readonly BotManager owner;
     Process? proc;
-    public string State { get; private set; } = "stopped"; // stopped starting connecting online stopping failed
+    public string State { get; private set; } = "stopped"; // stopped starting connecting online stopping failed waiting
     public string LastError { get; private set; } = "";
     public string LoginStep { get; private set; } = "";
     public JsonObject? Status { get; private set; }
@@ -40,9 +40,132 @@ public class BotRunner
     long chatSeq, botChatSeq, botEventSeq;
     int pollCount;
     readonly List<JsonObject> events = new();
-    public int Unread { get; private set; }
+    // unread chat by kind: im (IMs), group (group and conference chats), local (local, whisper, shout), object (objects, system)
+    readonly Dictionary<string, int> unreadBy = new();
+    public int Unread { get { lock (unreadBy) return unreadBy.Values.Sum(); } }
+    public Dictionary<string, int> UnreadBy() { lock (unreadBy) return new Dictionary<string, int>(unreadBy); }
+    public static string ChatCategory(string kind) => kind switch
+    {
+        "im" => "im",
+        "group" or "conference" => "group",
+        "local" or "whisper" or "shout" => "local",
+        _ => "object",
+    };
 
     public BotRunner(BotProfile p, BotManager owner) { Profile = p; this.owner = owner; LoadChatHistory(); }
+
+    // ---------- coming back after a lost connection or a crash ----------
+    bool hardStop;            // login refused, logged in elsewhere, logged off on purpose: do not bring it back
+    bool restorePending;      // after coming back: sit down again / follow again once online
+    int retries;
+    public DateTime? RetryAt { get; private set; }
+    DateTime? offlineSince;   // was online, the status says offline now
+    DateTime? netLostAt;      // "Network disconnected" because of a timeout or the server
+    DateTime? logoffAsked;    // a Logoff command (HUD "Log off") was seen
+
+    static TimeSpan Backoff(int n) => TimeSpan.FromSeconds(n switch { 0 => 20, 1 => 60, 2 => 120, _ => 300 });
+
+    /// <summary>The user stops the bot: it is not brought back.</summary>
+    public void UserStop(TimeSpan grace)
+    {
+        Profile.WantOnline = false; RetryAt = null; retries = 0; restorePending = false;
+        owner.Save();
+        if (State == "waiting") { SetState("stopped"); LastError = ""; return; }
+        Stop(grace);
+    }
+
+    void ScheduleRetry(string why)
+    {
+        if (!Profile.WantOnline || hardStop) return;
+        RetryAt = DateTime.Now + Backoff(retries);
+        retries++;
+        restorePending = true;
+        LastError = why + " – trying again at " + RetryAt.Value.ToString("HH:mm:ss") + ".";
+        AddLog("Manager: " + LastError, "app");
+        SetState("waiting");
+    }
+
+    /// <summary>Every 10 s from the manager: start a bot that should be online again, restart one whose
+    /// connection is gone, and do again what it was doing once it is back.</summary>
+    public void Watchdog()
+    {
+        try
+        {
+            var now = DateTime.Now;
+            if (State == "waiting" && RetryAt is DateTime at && now >= at && !Running)
+            {
+                RetryAt = null;
+                AddLog("Manager: starting the bot again (try " + retries + ")", "app");
+                string err = Start(resume: true);
+                if (err != "") ScheduleRetry("Could not start: " + err);
+                return;
+            }
+            if (!Running || !Profile.WantOnline || stopRequested) return;
+            // was online and lost the connection (no clean logout): the program does not log in again by itself
+            bool lost = offlineSince is DateTime off && now - off > TimeSpan.FromSeconds(60);
+            bool stuck = State is "connecting" or "starting" && restorePending && StartedAt is DateTime st && now - st > TimeSpan.FromMinutes(4);
+            if (lost || stuck)
+            {
+                offlineSince = null;
+                AddLog("Manager: " + (lost ? "the connection to Second Life is gone" : "logging in again takes too long") + " – restarting the bot program", "app");
+                Task.Run(() =>
+                {
+                    Stop(TimeSpan.FromSeconds(3), keepState: true);
+                    ScheduleRetry(lost ? "Connection lost" : "Login did not finish");
+                });
+                return;
+            }
+            if (State == "online" && OnlineSince is DateTime on && now - on > TimeSpan.FromMinutes(5)) retries = 0;
+            if (State == "online" && restorePending && OnlineSince is DateTime on2 && now - on2 > TimeSpan.FromSeconds(8)) { restorePending = false; _ = Restore(); }
+        }
+        catch (Exception e) { Log.Error("Watchdog " + Profile.Label, e); }
+    }
+
+    /// <summary>Back after a lost connection or a crash: sit down again or follow again.</summary>
+    async Task Restore()
+    {
+        var a = Profile.LastActivity;
+        if (a == null || a.Kind == "" || DateTime.Now - a.At > TimeSpan.FromDays(2)) return;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (a.Kind == "seat" && a.SeatId != "")
+        {
+            AddLog("Manager: back again – sitting down on " + (a.SeatName == "" ? "the seat" : a.SeatName) + " in " + a.Region + " again", "app");
+            var r = await RunCommand("CompanionJoin", new[] { a.CornerX.ToString(inv), a.CornerY.ToString(inv), a.X.ToString("0.#", inv), a.Y.ToString("0.#", inv), a.Z.ToString("0.#", inv), a.SeatId, "none" });
+            if (!r.Ok) AddLog("Manager: could not sit down again: " + r.Reply, "app");
+        }
+        else if (a.Kind == "follow" && a.FollowKey != "")
+        {
+            AddLog("Manager: back again – following " + a.FollowName + " again", "app");
+            var r = await RunCommand("CompanionFollow", new[] { a.FollowKey, a.FollowDist.ToString("0.#", inv), a.FollowAngle.ToString("0", inv), "none" });
+            if (!r.Ok) AddLog("Manager: could not follow again: " + r.Reply, "app");
+        }
+    }
+
+    /// <summary>Remembers what the bot does (seated / following) while it is online.</summary>
+    void NoteActivity(JsonObject st)
+    {
+        if (restorePending) return;      // just came back: keep what it did before until it does it again
+        var a = new Activity();
+        string seat = st["seatId"]?.ToString() ?? "", fk = st["followKey"]?.ToString() ?? "";
+        if (st["sitting"]?.GetValue<bool>() == true && seat != "")
+        {
+            a.Kind = "seat"; a.SeatId = seat; a.SeatName = st["seatName"]?.ToString() ?? "";
+            a.Region = st["region"]?.ToString() ?? "";
+            a.CornerX = (long)(st["cornerX"]?.GetValue<double>() ?? 0); a.CornerY = (long)(st["cornerY"]?.GetValue<double>() ?? 0);
+            a.X = st["x"]?.GetValue<double>() ?? 128; a.Y = st["y"]?.GetValue<double>() ?? 128; a.Z = st["z"]?.GetValue<double>() ?? 25;
+        }
+        else if (fk != "")
+        {
+            a.Kind = "follow"; a.FollowKey = fk; a.FollowName = st["following"]?.ToString() ?? "";
+            a.FollowDist = st["followDist"]?.GetValue<double>() ?? 2; a.FollowAngle = st["followAngle"]?.GetValue<double>() ?? 180;
+        }
+        var o = Profile.LastActivity;
+        if (o == null && a.Kind == "") return;      // still doing nothing: no save (it saved every poll before – the backups held only a minute)
+        if (o != null && o.Kind == a.Kind && o.SeatId == a.SeatId && o.FollowKey == a.FollowKey
+            && Math.Abs(o.FollowDist - a.FollowDist) < 0.01 && Math.Abs(o.FollowAngle - a.FollowAngle) < 0.01) return;
+        Profile.LastActivity = a.Kind == "" ? null : a;
+        owner.Save();
+    }
 
     public bool Running => proc != null && !proc.HasExited;
     public string Dir => AppPaths.Ensure(Path.Combine(AppPaths.BotsDir, Profile.Id));
@@ -80,9 +203,12 @@ public class BotRunner
         }
     }
 
-    public string Start()
+    public string Start(bool resume = false)
     {
         if (Running) return "already running";
+        hardStop = false; offlineSince = null; netLostAt = null; logoffAsked = null; RetryAt = null;
+        if (!resume) { retries = 0; restorePending = false; }
+        if (!Profile.WantOnline) { Profile.WantOnline = true; owner.Save(); }
         if (!File.Exists(AppPaths.BotExe)) return "Bot program missing: " + AppPaths.BotExe;
         if (string.IsNullOrWhiteSpace(Profile.Username)) return "No avatar name set";
         string pw;
@@ -159,6 +285,8 @@ public class BotRunner
         psi.Environment["SLBM_HUD_SCRIPT"] = HudFile("AvieBoterHUD.lsl");
         psi.Environment["SLBM_HUD_UPDATER"] = HudFile("AvieBoterHUDUpdater.lsl");
         psi.Environment["SLBM_HUD_MENU"] = HudFile("AvieBoterHUDMenu.lsl");
+        psi.Environment["SLBM_HUD_CAM"] = HudFile("AvieBoterHUDCam.lsl");
+        psi.Environment["SLBM_START"] = StartUri(Profile.StartLocation);
         psi.Environment["SLBM_HUD_AUTOUPDATE"] = Profile.AutoUpdateHud ? "1" : "0";
         psi.Environment["SLBM_YOUNG_DAYS"] = Profile.YoungAlertDays.ToString();
         psi.Environment["SLBM_BOT_LABEL"] = Profile.Label;
@@ -193,7 +321,16 @@ public class BotRunner
         AddLog(line, kind);
         if (line.Contains("{FAILED}"))
         {
-            LastError = "Login failed: " + line[(line.IndexOf("{FAILED}") + 8)..].Replace("Login status:", "").Trim();
+            string why = line[(line.IndexOf("{FAILED}") + 8)..].Replace("Login status:", "").Trim();
+            if (why.Contains("presence", StringComparison.OrdinalIgnoreCase) && Profile.WantOnline && retries < 6)
+            {
+                // the grid still has the old session (after a crash or a lost connection): wait and log in again
+                AddLog("Manager: Second Life still has the bot's old session – logging in again in a moment.", "app");
+                _ = Task.Run(() => { Stop(TimeSpan.FromSeconds(1), keepState: true); ScheduleRetry("Still logged in from before"); });
+                return;
+            }
+            LastError = "Login failed: " + why;
+            hardStop = true;
             AddLog("Manager: login failed, stopping the bot so it does not retry with the same details.", "app");
             SetState("failed");
             _ = Task.Run(() => Stop(TimeSpan.FromSeconds(1), keepState: true));
@@ -202,14 +339,33 @@ public class BotRunner
         else if (line.Contains("HTTP service [Enabled]")) { httpReady = true; if (LastError.StartsWith("The bot is in-world")) LastError = ""; }
         else if (line.Contains("Connected to sim:") && inWorldAt == null) inWorldAt = DateTime.Now;
         else if (line.Contains("attempting to log in from another location") && !stopRequested)
+        {
+            hardStop = true;
             LastError = "Second Life logged the bot out because this account was logged in somewhere else (e.g. in your viewer). The bot was stopped.";
+        }
+        else if (line.Contains("Network disconnected (NetworkTimeout") || line.Contains("Network disconnected (ServerInitiated") || line.Contains("Network disconnected (SimShutdown"))
+            netLostAt = DateTime.Now;
+        else if (line.Contains("\"command\":\"Logoff\"") || line.Contains("\"command\":\"CompanionLogoff\""))
+            logoffAsked = DateTime.Now;
         else if (line.Contains("Client service ~ Logged out") && !stopRequested)
         {
             // logged out in-world (HUD "Log off", or SL kicked it): end the program so the app shows the truth
             httpReady = false;
             LoginStep = "Logged out in Second Life";
-            AddLog("Manager: the avatar was logged out in Second Life - stopping the bot program.", "app");
-            _ = Task.Run(() => Stop(TimeSpan.FromSeconds(2)));
+            bool connection = netLostAt is DateTime nl && DateTime.Now - nl < TimeSpan.FromMinutes(2) && !hardStop
+                && !(logoffAsked is DateTime lo && DateTime.Now - lo < TimeSpan.FromMinutes(2));
+            if (connection && Profile.WantOnline)
+            {
+                AddLog("Manager: the connection to Second Life was lost - the bot comes back when it can.", "app");
+                _ = Task.Run(() => { Stop(TimeSpan.FromSeconds(2), keepState: true); ScheduleRetry("Connection lost"); });
+            }
+            else
+            {
+                if (logoffAsked != null) { Profile.WantOnline = false; owner.Save(); }
+                hardStop = true;
+                AddLog("Manager: the avatar was logged out in Second Life - stopping the bot program.", "app");
+                _ = Task.Run(() => Stop(TimeSpan.FromSeconds(2)));
+            }
         }
         else if (line.Contains("HTTP service [failed to start]")) LastError = "The bot's command service failed to start: " + line[(line.IndexOf("[failed to start]") + 17)..].Trim();
         else if (line.Contains("Config is not loaded")) { LastError = "The bot did not accept its settings."; }
@@ -221,6 +377,13 @@ public class BotRunner
         int code = 0; try { code = proc?.ExitCode ?? 0; } catch { }
         AddLog("Manager: bot process ended (code " + code + ")", "app");
         httpReady = false; Status = null; RamMb = 0; CpuPercent = 0; OnlineSince = null;
+        if (State == "waiting") { owner.Notify(); return; }      // a restart is planned already
+        if (!stopRequested && !hardStop && Profile.WantOnline)
+        {
+            ScheduleRetry("The bot program ended unexpectedly (code " + code + ")");
+            owner.Notify();
+            return;
+        }
         if (State != "failed") SetState(stopRequested ? "stopped" : "failed");
         if (!stopRequested && LastError == "") LastError = "The bot process ended unexpectedly (code " + code + ").";
         owner.Notify();
@@ -250,11 +413,13 @@ public class BotRunner
                     bool online = st["online"]?.GetValue<bool>() == true;
                     if (online)
                     {
-                        if (State != "online") { OnlineSince = DateTime.Now; SetState("online"); }
+                        offlineSince = null;
+                        if (State != "online") { OnlineSince = DateTime.Now; SetState("online"); if (LastError.Contains("trying again") || LastError.StartsWith("Connection lost")) LastError = ""; }
+                        NoteActivity(st);
                         string uuid = st["uuid"]?.ToString() ?? "", name = st["name"]?.ToString() ?? "";
                         if (uuid != "" && (uuid != Profile.BotUuid || name != Profile.BotName)) { Profile.BotUuid = uuid; Profile.BotName = name; owner.Save(); }
                     }
-                    else if (State == "online") SetState("connecting");
+                    else if (State == "online") { SetState("connecting"); offlineSince = DateTime.Now; }
                 }
                 PullChat();
                 if (++pollCount % 2 == 0) PullEvents();
@@ -326,7 +491,26 @@ public class BotRunner
             if (!own) { fresh++; incoming.Add(item); }
         }
         if (seq > botChatSeq) botChatSeq = seq;
-        if (fresh > 0) { Unread += fresh; owner.Notify(); owner.RaiseChat(this, incoming); }
+        if (fresh > 0)
+        {
+            lock (unreadBy) foreach (var it in incoming) { string k = ChatCategory(it.Kind); unreadBy[k] = unreadBy.GetValueOrDefault(k) + 1; }
+            owner.Notify(); owner.RaiseChat(this, incoming);
+        }
+    }
+
+    /// <summary>Where the bot logs in, for the login request: "last", "home" or "uri:Region&amp;x&amp;y&amp;z" from a SLURL.</summary>
+    public static string StartUri(string v)
+    {
+        v = (v ?? "").Trim();
+        if (v == "" || v.Equals("last", StringComparison.OrdinalIgnoreCase)) return "last";
+        if (v.Equals("home", StringComparison.OrdinalIgnoreCase)) return "home";
+        string t = Uri.UnescapeDataString(v);
+        foreach (var pre in new[] { "secondlife:///app/teleport/", "secondlife:///app/region/", "secondlife://", "http://maps.secondlife.com/secondlife/", "https://maps.secondlife.com/secondlife/", "http://slurl.com/secondlife/", "https://slurl.com/secondlife/" })
+            if (t.StartsWith(pre, StringComparison.OrdinalIgnoreCase)) { t = t[pre.Length..]; break; }
+        var parts = t.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "last";
+        int P(int i, int d) => parts.Length > i && double.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double x) ? (int)Math.Round(x) : d;
+        return "uri:" + parts[0].Trim() + "&" + P(1, 128) + "&" + P(2, 128) + "&" + P(3, 30);
     }
 
     /// <summary>Who may use the bot with a HUD (the bot checks each HUD's owner against this list).</summary>
@@ -445,7 +629,17 @@ public class BotRunner
     }
 
     public List<ChatItem> ChatSince(long after) { lock (chat) return chat.Where(c => c.Seq > after).TakeLast(600).ToList(); }
-    public void MarkRead() { if (Unread != 0) { Unread = 0; owner.Notify(); } }
+    /// <summary>The chat was looked at: everything (all) or the kind its filter shows (local, im, group, object).</summary>
+    public void MarkRead(string what = "all")
+    {
+        bool changed;
+        lock (unreadBy)
+        {
+            changed = what == "all" ? unreadBy.Count > 0 : unreadBy.Remove(what);
+            if (what == "all") unreadBy.Clear();
+        }
+        if (changed) owner.Notify();
+    }
 
     void AddLog(string text, string kind)
     {

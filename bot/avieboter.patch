@@ -1,9 +1,9 @@
 diff --git a/SecondBotEvents/Commands/Companion.cs b/SecondBotEvents/Commands/Companion.cs
 new file mode 100644
-index 0000000..18b8d05
+index 0000000..418ad5d
 --- /dev/null
 +++ b/SecondBotEvents/Commands/Companion.cs
-@@ -0,0 +1,868 @@
+@@ -0,0 +1,879 @@
 +// AvieBoter patch: commands for a companion / passenger bot driven by an in-world HUD.
 +// Long actions run in the background and report to a reply target (the HUD's HTTP-in URL),
 +// so the IM handler that received the command is never blocked.
@@ -63,6 +63,11 @@ index 0000000..18b8d05
 +                hudLatest = CompanionBuild.LatestHudVersion(),
 +                hudJob = CompanionBuild.HudJob,
 +                following = CompanionPeople.FollowInfo,
++                followKey = CompanionPeople.FollowKey,
++                followDist = CompanionPeople.FollowDist,
++                followAngle = CompanionPeople.FollowAngle,
++                heading = CompanionPuppet.Heading(c),
++                running = c.Self.Movement.AlwaysRun,
 +                note
 +            };
 +        }
@@ -774,6 +779,7 @@ index 0000000..18b8d05
 +                c.Self.ChatFromSimulator += OnChat;
 +                c.Self.IM += OnIM;
 +                CompanionPeople.Attach(c);
++                CompanionMenuStore.Attach(c);
 +                StartCameraFollower(c);
 +            }
 +        }
@@ -838,6 +844,10 @@ index 0000000..18b8d05
 +        }
 +
 +        static Timer cameraTimer;
++        /// <summary>The app's Nearby list may look further than the usual 64 m for a while (the region then sends the
++        /// objects up to this distance); the follower puts the camera's reach back afterwards.</summary>
++        public static float WideFar = 64f;
++        public static DateTime WideUntil = DateTime.MinValue;
 +
 +        /// <summary>LibreMetaverse moves the camera only when the bot turns; after a login or teleport it stays behind and
 +        /// the region then sends the objects around the old spot. Keep it on the bot so nearby objects (vehicles) are known.</summary>
@@ -851,10 +861,11 @@ index 0000000..18b8d05
 +                    if (c.Network?.CurrentSim == null) return;
 +                    var cam = c.Self.Movement.Camera;
 +                    Vector3 eye = c.Self.SimPosition + new Vector3(0f, 0f, 1.5f);
-+                    if (Vector3.Distance(cam.Position, eye) > 2f || cam.Far != 64f)
++                    float far = DateTime.Now < WideUntil ? WideFar : 64f;
++                    if (Vector3.Distance(cam.Position, eye) > 2f || cam.Far != far)
 +                    {
 +                        cam.Position = eye;
-+                        cam.Far = 64f;
++                        cam.Far = far;
 +                    }
 +                }
 +                catch { }
@@ -874,10 +885,10 @@ index 0000000..18b8d05
 +}
 diff --git a/SecondBotEvents/Commands/CompanionBuild.cs b/SecondBotEvents/Commands/CompanionBuild.cs
 new file mode 100644
-index 0000000..6fdb400
+index 0000000..d30b0d3
 --- /dev/null
 +++ b/SecondBotEvents/Commands/CompanionBuild.cs
-@@ -0,0 +1,632 @@
+@@ -0,0 +1,837 @@
 +// AvieBoter patch: building helpers so the app can make and update the HUD in-world
 +// (rez a box, put scripts into objects, link, wear, take, give) and see script errors.
 +using OpenMetaverse;
@@ -1110,8 +1121,9 @@ index 0000000..6fdb400
 +            var c = GetClient();
 +            var sim = c.Network.CurrentSim;
 +            uint me = c.Self.LocalID;
-+            var list = sim.ObjectsPrimitives.Values.Where(p => p.ParentID == me)
-+                .Select(p => new { localId = p.LocalID, uuid = p.ID.ToString(), name = p.Properties?.Name ?? "", point = p.PrimData.AttachmentPoint.ToString() }).ToList();
++            var prims = sim.ObjectsPrimitives.Values.Where(p => p.ParentID == me).ToList();
++            Names(prims);
++            var list = prims.Select(p => new { localId = p.LocalID, uuid = p.ID.ToString(), name = p.Properties?.Name ?? "", point = p.PrimData.AttachmentPoint.ToString() }).ToList();
 +            return BasicReply(J(list));
 +        }
 +
@@ -1125,6 +1137,190 @@ index 0000000..6fdb400
 +        public const string HudMainScript = "SL Bot HUD";
 +        public const string HudUpdaterScript = "SL Bot HUD updater";
 +        public const string HudMenuScript = "SL Bot HUD menu";
++        public const string HudCamScript = "SL Bot HUD cam";      // AvieBoter 1.6: the camera that watches the way the bot faces
++
++        // AvieBoter 1.7.9: the camera anchor. An invisible 1 cm prim the bot wears at Avatar Center while a HUD camera is on.
++        // A viewer camera kept on this object (RLV setcam_focus) follows the bot's real position - which animations never
++        // move - and can be turned round without the viewer's half-second glide (it glides whenever its focus point jumps
++        // by more than 1 cm, which the bobbing head and an off-centre rigged body always do).
++        // One item per bot, made once where the bot may build (soon after it is added), remembered by its inventory id
++        // (anchor.txt in the bot's folder), worn from inventory - which works where nobody may build - and taken off again
++        // when the camera is switched off. Copies made by earlier versions go to the Trash, extra worn ones come off.
++        public const string AnchorName = "Anchor";
++        static readonly string[] AnchorNames = ["Anchor", "AvieBoter anchor"];
++        const string AnchorFile = "anchor.txt";
++        static readonly object anchorGate = new();
++        static bool anchorTidied;
++
++        [About("The bot's camera anchor: on = wear it (made once where the bot may build), off = take it off, ready = make sure the bot has one, empty = how it is")]
++        [ReturnHints("what was done")]
++        [ArgHints("state", "on, off, ready or empty", "Text", "")]
++        [CmdTypeDo()]
++        public object CompanionAnchor(string state)
++        {
++            string st = (state ?? "").Trim().ToLowerInvariant();
++            if (st == "on") return BasicReply(AnchorOn(true), [state]);
++            if (st == "off") return BasicReply(AnchorOff(), [state]);
++            if (st == "ready") { var it = AnchorItem(true, out string how); return BasicReply(it != null ? "ready (" + how + ")" : how, [state]); }
++            lock (anchorGate)
++            {
++                var c = GetClient();
++                var sim = c?.Network?.CurrentSim;
++                if (sim == null) return BasicReply("offline", [state]);
++                return BasicReply(WornAnchors(c, sim).Count + " worn", [state]);
++            }
++        }
++
++        /// <summary>Asks the region for the names of these prims (the bot's own) and waits up to 3 s for them.</summary>
++        void Names(List<Primitive> prims)
++        {
++            var c = GetClient();
++            var sim = c.Network.CurrentSim;
++            var ids = prims.Where(p => p.Properties == null).Select(p => p.LocalID).ToArray();
++            if (ids.Length == 0 || sim == null) return;
++            c.Objects.SelectObjects(sim, ids, true);
++            DateTime until = DateTime.Now.AddSeconds(3);
++            while (DateTime.Now < until && prims.Any(p => p.Properties == null)) Thread.Sleep(200);
++        }
++
++        List<Primitive> WornAnchors(GridClient c, Simulator sim)
++        {
++            var mine = sim.ObjectsPrimitives.Values.Where(p => p.ParentID == c.Self.LocalID && p.PrimData.AttachmentPoint == AttachmentPoint.Root).ToList();
++            Names(mine);
++            return mine.Where(p => p.Properties != null && AnchorNames.Contains(p.Properties.Name)).ToList();
++        }
++
++        /// <summary>The bot's one anchor item: the remembered one, else one found from earlier (the others go to the Trash),
++        /// else a new one if the bot may build here. Null if there is none and none can be made.</summary>
++        InventoryItem AnchorItem(bool mayBuild, out string how)
++        {
++            lock (anchorGate)
++            {
++                var c = GetClient();
++                var sim = c?.Network?.CurrentSim;
++                how = "";
++                if (sim == null) { how = "offline"; return null; }
++                var trash = c.Inventory.FindFolderForType(FolderType.Trash);
++                InventoryItem kept = null;
++                if (System.IO.File.Exists(AnchorFile) && UUID.TryParse(System.IO.File.ReadAllText(AnchorFile).Trim(), out UUID id))
++                {
++                    var it = c.Inventory.FetchItem(id, c.Self.AgentID, TimeSpan.FromSeconds(10));
++                    if (it != null && it.ParentUUID == trash)
++                    {
++                        // deleted by accident (still in the Trash): bring it back instead of making another
++                        c.Inventory.MoveItem(it.UUID, c.Inventory.FindFolderForType(AssetType.Object));
++                        it.ParentUUID = c.Inventory.FindFolderForType(AssetType.Object);
++                        LogFormater.Info("[Companion] the camera anchor was in the Trash - put back");
++                    }
++                    if (it != null) { kept = it; how = "known"; }
++                    // gone for good (Trash emptied): it is made again below where the bot may build
++                }
++                if (kept == null || !anchorTidied)
++                {
++                    // copies from earlier versions anywhere in the inventory (not in the Trash): keep one, the rest to the Trash
++                    var all = AllItems(trash, out var cofLinks);
++                    var found = all.Where(i => i.AssetType == AssetType.Object && AnchorNames.Contains(i.Name) && i.CreatorID == c.Self.AgentID && i.UUID != kept?.UUID).ToList();
++                    if (kept == null && found.Count > 0) { kept = found.OrderByDescending(i => i.CreationDate).First(); found.Remove(kept); how = "found"; }
++                    foreach (var extra in found)
++                    {
++                        c.Appearance.Detach(extra);
++                        foreach (var link in cofLinks.Where(l => l.AssetUUID == extra.UUID)) c.Inventory.RemoveItem(link.UUID);   // its outfit link
++                        c.Inventory.MoveItem(extra.UUID, trash);
++                        LogFormater.Info("[Companion] an extra camera anchor went to the Trash");
++                    }
++                    anchorTidied = true;
++                }
++                if (kept == null)
++                {
++                    if (!mayBuild) { how = "none yet"; return null; }
++                    var (box, why) = RezBox(AnchorName, new Vector3(0.01f, 0.01f, 0.01f));
++                    if (box == null) { how = "none yet (" + why + ")"; return null; }
++                    Thread.Sleep(1000);
++                    c.Objects.SetName(sim, box.LocalID, AnchorName);     // once more: the first can be lost while the box is new
++                    var te = new Primitive.TextureEntry(new UUID("8dcd4a48-2d37-4909-9f78-f7a9eb4ef903"));   // transparent
++                    te.DefaultTexture.RGBA = new Color4(1f, 1f, 1f, 0f);
++                    c.Objects.SetTextures(sim, box.LocalID, te);
++                    Thread.Sleep(1500);
++                    kept = Take(box.LocalID, AnchorName);
++                    if (kept == null) { how = "none yet (it did not arrive in inventory)"; return null; }
++                    how = "made";
++                    LogFormater.Info("[Companion] made the camera anchor");
++                }
++                if (kept.Name != AnchorName) { c.Inventory.MoveItem(kept.UUID, kept.ParentUUID, AnchorName); kept.Name = AnchorName; }
++                try { System.IO.File.WriteAllText(AnchorFile, kept.UUID.ToString()); } catch { }
++                return kept;
++            }
++        }
++
++        /// <summary>Wears the one anchor at Avatar Center, 0.7 m above the centre (about head height: where the camera
++        /// looks; straight above, so turning does not move it). Extra worn anchors come off.</summary>
++        /// <summary>Every item in the bot's inventory outside the Trash (folder by folder, at most 60 s), and the links in
++        /// its current outfit folder.</summary>
++        List<InventoryItem> AllItems(UUID trash, out List<InventoryItem> cofLinks)
++        {
++            var c = GetClient();
++            var items = new List<InventoryItem>();
++            cofLinks = new List<InventoryItem>();
++            var cof = c.Inventory.FindFolderForType(FolderType.CurrentOutfit);
++            var todo = new Queue<UUID>();
++            todo.Enqueue(c.Inventory.Store.RootFolder.UUID);
++            DateTime until = DateTime.Now.AddSeconds(60);
++            int folders = 0;
++            while (todo.Count > 0 && DateTime.Now < until && folders < 3000)
++            {
++                var f = todo.Dequeue();
++                folders++;
++                foreach (var b in c.Inventory.FolderContents(f, c.Self.AgentID, true, true, InventorySortOrder.ByName, TimeSpan.FromSeconds(15)) ?? [])
++                {
++                    if (b is InventoryFolder sub) { if (sub.UUID != trash) todo.Enqueue(sub.UUID); }
++                    else if (b is InventoryItem it) { if (f == cof) cofLinks.Add(it); else items.Add(it); }
++                }
++            }
++            LogFormater.Info("[Companion] looked through " + folders + " inventory folders for camera anchors");
++            return items;
++        }
++
++        public bool AnchorItemReady(out string how) => AnchorItem(true, out how) != null;
++
++        public string AnchorOn(bool mayBuild)
++        {
++            lock (anchorGate)
++            {
++                var c = GetClient();
++                var sim = c?.Network?.CurrentSim;
++                if (sim == null) return "offline";
++                var item = AnchorItem(mayBuild, out string how);
++                var worn = WornAnchors(c, sim);
++                if (worn.Count > 1) { c.Objects.DetachObjects(sim, worn.Skip(1).Select(p => p.LocalID).ToList()); worn = worn.Take(1).ToList(); }
++                if (worn.Count == 0)
++                {
++                    if (item == null) return how;
++                    c.Appearance.Attach(item, AttachmentPoint.Root, false);
++                    DateTime until = DateTime.Now.AddSeconds(10);
++                    while (worn.Count == 0 && DateTime.Now < until) { Thread.Sleep(500); worn = WornAnchors(c, sim); }
++                    if (worn.Count == 0) return "put on (not seen yet)";
++                }
++                var a = worn[0];
++                if (Math.Abs(a.Position.Z - 0.7f) > 0.05f || Math.Abs(a.Position.X) > 0.01f || Math.Abs(a.Position.Y) > 0.01f)
++                    c.Objects.SetPosition(sim, a.LocalID, new Vector3(0f, 0f, 0.7f));
++                if (a.Properties?.Name != AnchorName) c.Objects.SetName(sim, a.LocalID, AnchorName);
++                return "worn";
++            }
++        }
++
++        public string AnchorOff()
++        {
++            lock (anchorGate)
++            {
++                var c = GetClient();
++                var sim = c?.Network?.CurrentSim;
++                if (sim == null) return "offline";
++                var worn = WornAnchors(c, sim);
++                if (worn.Count == 0) return "not worn";
++                c.Objects.DetachObjects(sim, worn.Select(p => p.LocalID).ToList());
++                return "taken off";
++            }
++        }
 +        public static string LastHudVersion = "";
 +        public static long LastHudSeen = 0;
 +        public static string HudJob = "";          // last "Send me a new HUD" job: building… / sent … / the error
@@ -1133,8 +1329,8 @@ index 0000000..6fdb400
 +
 +        const string CourierName2 = "SLBM courier";
 +        const string CourierScript = """
-+// SLBM courier 2 - worn by the bot as its own HUD (nobody else sees it). It hands HUD updates (the scripts
-+// "SL Bot HUD" and "SL Bot HUD menu") to the AvieBoter HUDs that ask for one. AvieBoter keeps it up to date.
++// SLBM courier 3 - worn by the bot as its own HUD (nobody else sees it). It hands HUD updates (the scripts
++// "SL Bot HUD", "SL Bot HUD menu" and "SL Bot HUD cam") to the AvieBoter HUDs that ask for one. AvieBoter keeps it up to date.
 +integer CH = -7710421;
 +default
 +{
@@ -1147,7 +1343,7 @@ index 0000000..6fdb400
 +        while (i--)
 +        {
 +            string s = llGetInventoryName(INVENTORY_SCRIPT, i);
-+            if (s == "SL Bot HUD" || s == "SL Bot HUD menu") llGiveInventory(id, s);
++            if (s == "SL Bot HUD" || s == "SL Bot HUD menu" || s == "SL Bot HUD cam") llGiveInventory(id, s);
 +        }
 +    }
 +}
@@ -1179,7 +1375,7 @@ index 0000000..6fdb400
 +            if (string.IsNullOrEmpty(p))
 +            {
 +                // started without the app's settings: the app keeps the HUD scripts in ..\wwwroot\hud next to the bot folder
-+                string f = var == "SLBM_HUD_UPDATER" ? "AvieBoterHUDUpdater.lsl" : var == "SLBM_HUD_MENU" ? "AvieBoterHUDMenu.lsl" : "AvieBoterHUD.lsl";
++                string f = var == "SLBM_HUD_UPDATER" ? "AvieBoterHUDUpdater.lsl" : var == "SLBM_HUD_MENU" ? "AvieBoterHUDMenu.lsl" : var == "SLBM_HUD_CAM" ? "AvieBoterHUDCam.lsl" : "AvieBoterHUD.lsl";
 +                p = System.IO.Path.Combine(AppContext.BaseDirectory, "..", "wwwroot", "hud", f);
 +            }
 +            try { return string.IsNullOrEmpty(p) || !System.IO.File.Exists(p) ? null : System.IO.File.ReadAllText(p); } catch { return null; }
@@ -1204,6 +1400,14 @@ index 0000000..6fdb400
 +            uint me = c.Self.LocalID;
 +            return c.Network.CurrentSim.ObjectsPrimitives.Values.FirstOrDefault(p => p.ParentID == me && p.NameValues != null
 +                && p.NameValues.Any(nv => nv.Name == "AttachItemID" && nv.Value?.ToString() == itemId.ToString()));
++        }
++
++        /// <summary>An object item in the top level of the inventory (where an object attached from the ground can land).</summary>
++        InventoryItem FindRootItem(string name)
++        {
++            var c = GetClient();
++            var list = c.Inventory.FolderContents(c.Inventory.Store.RootFolder.UUID, c.Self.AgentID, false, true, InventorySortOrder.ByDate, TimeSpan.FromSeconds(30), true) ?? [];
++            return list.FirstOrDefault(b => b is InventoryItem i && i.AssetType == AssetType.Object && i.Name == name) as InventoryItem;
 +        }
 +
 +        InventoryItem FindObjectItem(string name)
@@ -1257,6 +1461,12 @@ index 0000000..6fdb400
 +            if (!r1.ok) return (false, "HUD script did not compile: " + r1.step + " " + string.Join(" ", r1.messages));
 +            var r2 = PutScript(courier.LocalID, HudMenuScript, menu, false);
 +            if (!r2.ok) return (false, "HUD menu script did not compile: " + r2.step + " " + string.Join(" ", r2.messages));
++            string cam = ReadFileFromEnv("SLBM_HUD_CAM");
++            if (cam != null)
++            {
++                var r2c = PutScript(courier.LocalID, HudCamScript, cam, false);
++                if (!r2c.ok) return (false, "HUD camera script did not compile: " + r2c.step + " " + string.Join(" ", r2c.messages));
++            }
 +            var r3 = PutScript(courier.LocalID, CourierName2, CourierScript, true);
 +            return r3.ok ? (true, "") : (false, "courier script: " + r3.step);
 +        }
@@ -1312,6 +1522,12 @@ index 0000000..6fdb400
 +                if (!r1.ok) return "HUD script did not compile: " + r1.step + " " + string.Join(" ", r1.messages);
 +                var r1b = PutScript(root.LocalID, HudMenuScript, menu, true);
 +                if (!r1b.ok) return "HUD menu script did not compile: " + r1b.step + " " + string.Join(" ", r1b.messages);
++                string cam = ReadFileFromEnv("SLBM_HUD_CAM");
++                if (cam != null)
++                {
++                    var r1c = PutScript(root.LocalID, HudCamScript, cam, true);
++                    if (!r1c.ok) return "HUD camera script did not compile: " + r1c.step + " " + string.Join(" ", r1c.messages);
++                }
 +                var r2 = PutScript(helper.LocalID, HudUpdaterScript, updater, true);
 +                if (!r2.ok) return "updater script did not compile: " + r2.step + " " + string.Join(" ", r2.messages);
 +                // a one-shot script that pairs the HUD with this bot when it reaches its new owner, then deletes itself
@@ -1857,12 +2073,607 @@ index 0000000..a696b23
 +        public static Invite Take(UUID g) => open.TryRemove(g, out Invite i) ? i : null;
 +    }
 +}
+diff --git a/SecondBotEvents/Commands/CompanionInventory.cs b/SecondBotEvents/Commands/CompanionInventory.cs
+new file mode 100644
+index 0000000..dc5e765
+--- /dev/null
++++ b/SecondBotEvents/Commands/CompanionInventory.cs
+@@ -0,0 +1,589 @@
++// AvieBoter patch: the bot's inventory for the app - browse folders, search, see what is worn, and act on items and
++// folders like a viewer's inventory window (add / wear / take off, rez, give, rename, move, new folder, Trash, read
++// notecards). Answers are JSON for the app's Inventory section.
++using OpenMetaverse;
++using OpenMetaverse.Assets;
++using SecondBotEvents.Services;
++using System;
++using System.Collections.Generic;
++using System.Linq;
++using System.Text.Json;
++using System.Threading;
++
++namespace SecondBotEvents.Commands
++{
++    [ClassInfo("The bot's inventory for the AvieBoter app")]
++    public class CompanionInventory(EventsSecondBot setmaster) : CommandsAPI(setmaster)
++    {
++        static string J(object o) => JsonSerializer.Serialize(o, JsonOptions.UnsafeRelaxed);
++
++        UUID Trash => GetClient().Inventory.FindFolderForType(FolderType.Trash);
++
++        /// <summary>Worn attachments by item: what the bot's attachment prims say (AttachItemID), plus what the
++        /// appearance code knows (it can be empty after a login).</summary>
++        Dictionary<UUID, AttachmentPoint> WornAttachments()
++        {
++            var c = GetClient();
++            var d = new Dictionary<UUID, AttachmentPoint>(c.Appearance.GetAttachmentsByItemId());
++            var sim = c.Network.CurrentSim;
++            if (sim != null)
++                foreach (var p in sim.ObjectsPrimitives.Values.Where(p => p.ParentID == c.Self.LocalID))
++                {
++                    if (p.NameValues == null) continue;
++                    foreach (var nv in p.NameValues)
++                        if (nv.Name == "AttachItemID" && UUID.TryParse(nv.Value?.ToString() ?? "", out UUID id)) d[id] = p.PrimData.AttachmentPoint;
++                }
++            return d;
++        }
++
++        /// <summary>Worn clothing and body parts: the links in the current outfit folder (as viewers keep it), plus what
++        /// the appearance code knows.</summary>
++        HashSet<UUID> WornWearables() => new(GetClient().Appearance.GetWearables().Select(w => w.ItemID).Concat(OutfitLinks().Where(l => l.InventoryType == InventoryType.Wearable).Select(l => l.AssetUUID)));
++
++        List<InventoryItem> OutfitLinks()
++        {
++            var c = GetClient();
++            var cof = c.Inventory.FindFolderForType(FolderType.CurrentOutfit);
++            if (cof == UUID.Zero) return [];
++            return (c.Inventory.FolderContents(cof, c.Self.AgentID, false, true, InventorySortOrder.ByName, TimeSpan.FromSeconds(15)) ?? []).OfType<InventoryItem>().Where(i => i.IsLink()).ToList();
++        }
++
++        object ItemJson(InventoryItem i, Dictionary<UUID, AttachmentPoint> att, HashSet<UUID> wear)
++        {
++            UUID real = i.IsLink() && GetClient().Inventory.Store.Contains(i.AssetUUID) ? i.AssetUUID : i.UUID;
++            string worn = att.TryGetValue(real, out var p) ? p.ToString() : wear.Contains(real) ? "worn" : "";
++            return new
++            {
++                id = i.UUID.ToString(),
++                name = i.Name,
++                kind = i.IsLink() ? "link" : i.InventoryType.ToString(),
++                asset = i.AssetType.ToString(),
++                worn,
++                copy = (i.Permissions.OwnerMask & PermissionMask.Copy) != 0,
++                mod = (i.Permissions.OwnerMask & PermissionMask.Modify) != 0,
++                trans = (i.Permissions.OwnerMask & PermissionMask.Transfer) != 0,
++                date = new DateTimeOffset(i.CreationDate.ToUniversalTime()).ToUnixTimeSeconds(),
++                desc = i.Description ?? ""
++            };
++        }
++
++        InventoryItem Item(string id)
++        {
++            var c = GetClient();
++            if (!UUID.TryParse(id ?? "", out UUID u)) return null;
++            if (c.Inventory.Store.Contains(u)) return c.Inventory.Store[u] as InventoryItem;     // a folder is no item
++            try { return c.Inventory.FetchItem(u, c.Self.AgentID, TimeSpan.FromSeconds(10)); }
++            catch (InvalidCastException) { return null; }
++        }
++
++        InventoryFolder Folder(string id)
++        {
++            var c = GetClient();
++            if (!UUID.TryParse(id ?? "", out UUID u)) return null;
++            return c.Inventory.Store.Contains(u) ? c.Inventory.Store[u] as InventoryFolder : null;
++        }
++
++        /// <summary>The worn item behind a link (outfit folders hold links).</summary>
++        InventoryItem Real(InventoryItem i)
++        {
++            if (i == null || !i.IsLink()) return i;
++            var c = GetClient();
++            if (c.Inventory.Store.Contains(i.AssetUUID) && c.Inventory.Store[i.AssetUUID] is InventoryItem r) return r;
++            return c.Inventory.FetchItem(i.AssetUUID, c.Self.AgentID, TimeSpan.FromSeconds(10)) ?? i;
++        }
++
++        [About("A folder of the bot's inventory: its subfolders and items (worn ones marked); empty = the top level")]
++        [ReturnHints("json {id, name, parent, path, trash, folders:[{id,name,type}], items:[...]}")]
++        [ArgHints("folder", "folder key, or empty for the top level", "Text", "")]
++        [CmdTypeGet()]
++        public object CompanionInvList(string folder)
++        {
++            var c = GetClient();
++            UUID root = c.Inventory.Store.RootFolder.UUID;
++            UUID fid = UUID.TryParse(folder ?? "", out UUID u) && u != UUID.Zero ? u : root;
++            var list = c.Inventory.FolderContents(fid, c.Self.AgentID, true, true, InventorySortOrder.ByName | InventorySortOrder.FoldersByName, TimeSpan.FromSeconds(20));
++            if (list == null) return Failure("Second Life did not answer – try again", [folder]);
++            var att = WornAttachments(); var wear = WornWearables();
++            var path = new List<object>();
++            UUID p = fid;
++            for (int n = 0; n < 30 && p != UUID.Zero && c.Inventory.Store.Contains(p); n++)
++            {
++                var f = c.Inventory.Store[p];
++                path.Insert(0, new { id = f.UUID.ToString(), name = p == root ? "Inventory" : f.Name });
++                if (p == root) break;
++                p = f.ParentUUID;
++            }
++            return BasicReply(J(new
++            {
++                id = fid.ToString(),
++                parent = c.Inventory.Store.Contains(fid) ? c.Inventory.Store[fid].ParentUUID.ToString() : "",
++                path,
++                trash = Trash.ToString(),
++                folders = list.OfType<InventoryFolder>().OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
++                    .Select(f => new { id = f.UUID.ToString(), name = f.Name, type = f.PreferredType.ToString() }),
++                items = list.OfType<InventoryItem>().OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase).Select(i => ItemJson(i, att, wear))
++            }), [folder]);
++        }
++
++        [About("Searches the bot's whole inventory (not the Trash) for items and folders whose name contains the text")]
++        [ReturnHints("json [{id, name, folder, folderName, isFolder, ...}] (at most 300)")]
++        [ArgHints("text", "part of the name", "Text")]
++        [CmdTypeGet()]
++        public object CompanionInvSearch(string text)
++        {
++            var c = GetClient();
++            string q = (text ?? "").Trim();
++            if (q.Length < 2) return Failure("type at least two letters", [text]);
++            var att = WornAttachments(); var wear = WornWearables();
++            var hits = new List<object>();
++            var todo = new Queue<(UUID id, string name)>();
++            todo.Enqueue((c.Inventory.Store.RootFolder.UUID, "Inventory"));
++            UUID trash = Trash;
++            DateTime until = DateTime.Now.AddSeconds(45);
++            while (todo.Count > 0 && DateTime.Now < until && hits.Count < 300)
++            {
++                var (f, fname) = todo.Dequeue();
++                foreach (var b in c.Inventory.FolderContents(f, c.Self.AgentID, true, true, InventorySortOrder.ByName, TimeSpan.FromSeconds(15)) ?? [])
++                {
++                    bool match = b.Name.Contains(q, StringComparison.OrdinalIgnoreCase);
++                    if (b is InventoryFolder sub)
++                    {
++                        if (sub.UUID == trash) continue;
++                        todo.Enqueue((sub.UUID, sub.Name));
++                        if (match) hits.Add(new { id = sub.UUID.ToString(), name = sub.Name, isFolder = true, folder = f.ToString(), folderName = fname });
++                    }
++                    else if (b is InventoryItem it && match)
++                        hits.Add(new { isFolder = false, folder = f.ToString(), folderName = fname, item = ItemJson(it, att, wear) });
++                }
++            }
++            return BasicReply(J(new { hits, complete = todo.Count == 0 }), [text]);
++        }
++
++        [About("What the bot wears now: attachments (with their points) and clothing / body parts")]
++        [ReturnHints("json {attachments:[{id,name,point}], wearables:[{id,name,type}]}")]
++        [CmdTypeGet()]
++        public object CompanionInvWorn()
++        {
++            var c = GetClient();
++            var links = OutfitLinks();
++            string NameOf(UUID id) =>
++                (c.Inventory.Store.Contains(id) ? c.Inventory.Store[id].Name : null) ?? links.FirstOrDefault(l => l.AssetUUID == id)?.Name ?? "(name not loaded yet)";
++            var att = WornAttachments().Select(kv => new { id = kv.Key.ToString(), name = NameOf(kv.Key), point = kv.Value.ToString() })
++                .OrderBy(x => x.point).ToList();
++            var wear = WornWearables().Select(id =>
++            {
++                var l = links.FirstOrDefault(x => x.AssetUUID == id);
++                var w = c.Appearance.GetWearables().FirstOrDefault(x => x.ItemID == id);
++                string type = w != null ? w.WearableType.ToString() : (c.Inventory.Store.Contains(id) && c.Inventory.Store[id] is InventoryWearable iw ? iw.WearableType.ToString() : "");
++                return new { id = id.ToString(), name = NameOf(id), type };
++            }).OrderBy(x => x.type).ToList();
++            return BasicReply(J(new { attachments = att, wearables = wear }));
++        }
++
++        /// <summary>Where to rez: in front of the bot, on the ground (or floor) below that spot, next to the person who
++        /// uses the bot, or at region coordinates. onGround = let the region find the surface below by a ray.</summary>
++        static (Vector3 pos, bool onGround, string where) RezPlace(GridClient c, Simulator sim, string how)
++        {
++            var inv = System.Globalization.CultureInfo.InvariantCulture;
++            Vector3 front = c.Self.SimPosition + new Vector3(1.5f, 0f, 0.3f) * c.Self.Movement.BodyRotation;
++            switch ((how ?? "").Trim().ToLowerInvariant())
++            {
++                case "": case "front": return (front, false, "in front of the bot");
++                case "ground": return (front, true, "on the ground in front of the bot");
++                case "me":
++                    {
++                        var t = CompanionAccess.LastCaller == UUID.Zero ? null : CompanionRadarData.Find(c, CompanionAccess.LastCaller);
++                        if (t == null || t.Handle != sim.Handle) return (front, false, null);
++                        Vector3 fwd = new Vector3(1f, 0f, 0f) * t.Rot;
++                        return (t.Pos + new Vector3(fwd.X, fwd.Y, 0f) * 1.5f, true, "in front of " + t.Name);
++                    }
++            }
++            var parts = how.Split(',', ';', '/');
++            if (parts.Length >= 2 && float.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, inv, out float x)
++                && float.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, inv, out float y))
++            {
++                bool hasZ = parts.Length >= 3 && float.TryParse(parts[2].Trim(), System.Globalization.NumberStyles.Float, inv, out float z0);
++                float z = hasZ ? float.Parse(parts[2].Trim(), System.Globalization.NumberStyles.Float, inv) : c.Self.SimPosition.Z;
++                return (new Vector3(Math.Clamp(x, 0f, 255.9f), Math.Clamp(y, 0f, 255.9f), z), !hasZ, hasZ ? $"at {x:0.#}, {y:0.#}, {z:0.#}" : $"on the ground at {x:0.#}, {y:0.#}");
++            }
++            return (front, false, null);
++        }
++
++        /// <summary>Rezzes an inventory object; with onGround the region casts a ray down from above the spot and puts the
++        /// object on the first surface (as a viewer does when you drag something onto the ground).</summary>
++        static void Rez(GridClient c, Simulator sim, InventoryItem item, Vector3 pos, bool onGround)
++        {
++            if (!onGround) { c.Inventory.RequestRezFromInventory(sim, c.Self.Movement.BodyRotation, pos, item); return; }
++            var p = new OpenMetaverse.Packets.RezObjectPacket();
++            p.AgentData.AgentID = c.Self.AgentID; p.AgentData.SessionID = c.Self.SessionID; p.AgentData.GroupID = c.Self.ActiveGroup;
++            var r = p.RezData;
++            r.FromTaskID = UUID.Zero; r.BypassRaycast = 0; r.RayTargetID = UUID.Zero; r.RayEndIsIntersection = false;
++            r.RayStart = new Vector3(pos.X, pos.Y, pos.Z + 3f); r.RayEnd = new Vector3(pos.X, pos.Y, Math.Max(0f, pos.Z - 60f));
++            r.RezSelected = false; r.RemoveItem = false; r.ItemFlags = item.Flags;
++            r.GroupMask = (uint)item.Permissions.GroupMask; r.EveryoneMask = (uint)item.Permissions.EveryoneMask; r.NextOwnerMask = (uint)item.Permissions.NextOwnerMask;
++            var d = p.InventoryData;
++            d.ItemID = item.UUID; d.FolderID = item.ParentUUID; d.CreatorID = item.CreatorID; d.OwnerID = item.OwnerID; d.GroupID = item.GroupID;
++            d.BaseMask = (uint)item.Permissions.BaseMask; d.OwnerMask = (uint)item.Permissions.OwnerMask; d.GroupMask = (uint)item.Permissions.GroupMask;
++            d.EveryoneMask = (uint)item.Permissions.EveryoneMask; d.NextOwnerMask = (uint)item.Permissions.NextOwnerMask; d.GroupOwned = item.GroupOwned;
++            d.TransactionID = UUID.Random(); d.Type = (sbyte)item.InventoryType; d.InvType = (sbyte)item.InventoryType; d.Flags = item.Flags;
++            d.SaleType = (byte)item.SaleType; d.SalePrice = item.SalePrice; d.Name = Utils.StringToBytes(item.Name); d.Description = Utils.StringToBytes(item.Description);
++            d.CreationDate = (int)Utils.DateTimeToUnixTime(item.CreationDate);
++            c.Network.SendPacket(p, sim);
++        }
++
++        public const string NewScript = "default\n{\n    state_entry()\n    {\n        llSay(0, \"Hello, Avatar!\");\n    }\n\n    touch_start(integer total_number)\n    {\n        llSay(0, \"Touched.\");\n    }\n}\n";
++
++        /// <summary>Makes a notecard or script in a folder of the bot's inventory (with a first text) and returns it.</summary>
++        public InventoryItem CreateText(UUID folder, string name, bool script, string text, out string why)
++        {
++            var c = GetClient();
++            why = "";
++            InventoryItem made = null;
++            using (var done = new ManualResetEventSlim())
++            {
++                c.Inventory.RequestCreateItem(folder, name, "", script ? AssetType.LSLText : AssetType.Notecard, UUID.Random(),
++                    script ? InventoryType.LSL : InventoryType.Notecard, PermissionMask.All, (ok, item) => { if (ok) made = item; done.Set(); });
++                done.Wait(20000);
++            }
++            if (made == null) { why = "Second Life did not make it"; return null; }
++            if (!string.IsNullOrEmpty(text))       // an empty notecard needs no upload (an empty upload gets no answer)
++            {
++                string w = SaveText(made.UUID, script, text, out _);
++                if (w != "") why = "made, but the first text was not saved: " + w;
++            }
++            return made;
++        }
++
++        /// <summary>Saves the text of a notecard or script in the bot's inventory; for a script also gives the compile messages.</summary>
++        public string SaveText(UUID itemId, bool script, string text, out List<string> messages)
++        {
++            var c = GetClient();
++            var msgs = new List<string>();
++            string why = "the save did not answer";
++            using (var done = new ManualResetEventSlim())
++            {
++                if (script)
++                    c.Inventory.RequestUpdateScriptAgentInventory(System.Text.Encoding.UTF8.GetBytes(text), itemId, true,
++                        (up, st, comp, cm, id, asset) => { why = up ? "" : "not saved: " + st; if (cm != null) msgs.AddRange(cm); if (up && !comp && msgs.Count == 0) msgs.Add("did not compile"); done.Set(); });
++                else
++                {
++                    var nc = new AssetNotecard { BodyText = text };
++                    nc.Encode();
++                    c.Inventory.RequestUploadNotecardAsset(nc.AssetData, itemId, (ok, st, id, asset) => { why = ok ? "" : "not saved: " + st; done.Set(); });
++                }
++                done.Wait(30000);
++            }
++            messages = msgs;
++            return why;
++        }
++
++        [About("Makes a new notecard or script in a folder of the bot's inventory")]
++        [ReturnHints("json {id, name} of the new item")]
++        [ArgHints("kind", "notecard or script", "Text")]
++        [ArgHints("folder", "folder key (none = Notecards / Scripts)", "Text")]
++        [ArgHints("name", "its name", "Text")]
++        [CmdTypeDo()]
++        public object CompanionInvNew(string kind, string folder, string name)
++        {
++            var c = GetClient();
++            bool script = string.Equals(kind, "script", StringComparison.OrdinalIgnoreCase);
++            if (!script && !string.Equals(kind, "notecard", StringComparison.OrdinalIgnoreCase)) return Failure("notecard or script?", [kind]);
++            name = string.IsNullOrWhiteSpace(name) || name == "none" ? (script ? "New Script" : "New Note") : name.Trim();
++            UUID f = UUID.TryParse(folder ?? "", out UUID u) && u != UUID.Zero ? u : c.Inventory.FindFolderForType(script ? FolderType.LSLText : FolderType.Notecard);
++            var it = CreateText(f, name, script, script ? NewScript : "", out string why);
++            if (it == null) return Failure(why, [kind, name]);
++            return BasicReply(J(new { id = it.UUID.ToString(), name = it.Name, note = why }), [kind, name]);
++        }
++
++        [About("Saves the text of a notecard or a script in the bot's inventory (a script is compiled by the region)")]
++        [ReturnHints("json {saved, messages}")]
++        [ArgHints("id", "the item's key", "Text")]
++        [ArgHints("text", "the whole new text", "Text")]
++        [CmdTypeDo()]
++        public object CompanionInvSave(string id, string text)
++        {
++            var it = Real(Item(id));
++            if (it == null) return Failure("not found – refresh the list", [id]);
++            if (it.AssetType is not (AssetType.Notecard or AssetType.LSLText)) return Failure("only notecards and scripts have a text", [id]);
++            if ((it.Permissions.OwnerMask & PermissionMask.Modify) == 0) return Failure("the bot may not change " + it.Name, [id]);
++            string why = SaveText(it.UUID, it.AssetType == AssetType.LSLText, text ?? "", out var msgs);
++            if (why != "") return Failure(why, [id]);
++            return BasicReply(J(new { saved = true, messages = msgs }), [id]);
++        }
++
++        UUID MyOutfits() => GetClient().Inventory.FindFolderForType(FolderType.MyOutfits);
++
++        [About("The outfits in My Outfits for the app's outfit gallery: id, name, how many things, and which one is worn")]
++        [ReturnHints("json {folder, outfits:[{id, name, count, current}]}")]
++        [CmdTypeGet()]
++        public object CompanionOutfitList()
++        {
++            var c = GetClient();
++            UUID mo = MyOutfits();
++            if (mo == UUID.Zero) return Failure("no My Outfits folder");
++            var list = c.Inventory.FolderContents(mo, c.Self.AgentID, true, false, InventorySortOrder.ByName | InventorySortOrder.FoldersByName, TimeSpan.FromSeconds(20)) ?? [];
++            var cur = new HashSet<UUID>(OutfitLinks().Where(l => l.AssetType == AssetType.LinkFolder).Select(l => l.AssetUUID));
++            var outfits = list.OfType<InventoryFolder>().Select(f => new { id = f.UUID.ToString(), name = f.Name, count = f.DescendentCount, current = cur.Contains(f.UUID) }).ToList();
++            return BasicReply(J(new { folder = mo.ToString(), outfits }));
++        }
++
++        [About("Saves what the bot wears now as a new outfit in My Outfits (links, like a viewer)")]
++        [ReturnHints("what was saved")]
++        [ArgHints("name", "the new outfit's name", "Text")]
++        [CmdTypeDo()]
++        public object CompanionOutfitSave(string name)
++        {
++            var c = GetClient();
++            name = (name ?? "").Trim();
++            if (name == "") return Failure("give the outfit a name", [name]);
++            UUID mo = MyOutfits();
++            if (mo == UUID.Zero) return Failure("no My Outfits folder", [name]);
++            var things = new Dictionary<UUID, InventoryItem>();
++            foreach (var id in WornAttachments().Keys) { var it = Item(id.ToString()); if (it != null) things[it.UUID] = Real(it); }
++            int att = things.Count;
++            foreach (var l in OutfitLinks().Where(l => l.AssetType == AssetType.Link))
++            {
++                var it = Real(l);
++                if (it != null && it.InventoryType == InventoryType.Wearable) things[it.UUID] = it;
++            }
++            int wear = things.Count - att;
++            if (things.Count == 0) return Failure("the bot wears nothing that could be saved", [name]);
++            UUID folder = c.Inventory.CreateFolder(mo, name, FolderType.Outfit);
++            int made = 0;
++            using var all = new CountdownEvent(things.Count);
++            foreach (var it in things.Values)
++                c.Inventory.CreateLink(folder, it, (ok, item) => { if (ok) Interlocked.Increment(ref made); all.Signal(); });
++            all.Wait(30000);
++            return BasicReply("saved '" + name + "': " + made + " of " + things.Count + " things (" + att + " attachments, " + wear + " clothing and body parts)", [name]);
++        }
++
++        /// <summary>ManagedImage → SKBitmap (LibreMetaverse's ExportBitmap treats raw pixels as an encoded file and gives null).</summary>
++        static SkiaSharp.SKBitmap Bitmap(OpenMetaverse.Imaging.ManagedImage im)
++        {
++            int n = im.Width * im.Height;
++            var raw = new byte[n * 4];
++            bool alpha = (im.Channels & OpenMetaverse.Imaging.ManagedImage.ImageChannels.Alpha) != 0 && im.Alpha != null;
++            byte[] r = im.Red ?? im.Alpha, g = im.Green ?? r, b = im.Blue ?? r;
++            for (int i = 0; i < n; i++)
++            {
++                raw[i * 4 + 0] = b[i]; raw[i * 4 + 1] = g[i]; raw[i * 4 + 2] = r[i];
++                raw[i * 4 + 3] = alpha ? im.Alpha[i] : (byte)255;
++            }
++            var bmp = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(im.Width, im.Height, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Unpremul));
++            System.Runtime.InteropServices.Marshal.Copy(raw, 0, bmp.GetPixels(), raw.Length);
++            return bmp;
++        }
++
++        /// <summary>Downloads a texture and turns it into a PNG (largest side at most 1024 px).</summary>
++        static byte[] Png(GridClient c, UUID texture, out string why)
++        {
++            why = "could not get the picture";
++            OpenMetaverse.Assets.AssetTexture tex = null;
++            using var done = new ManualResetEventSlim();
++            c.Assets.RequestImage(texture, ImageType.Normal, (state, asset) =>
++            {
++                if (state == TextureRequestState.Finished) tex = asset;
++                if (state != TextureRequestState.Progress && state != TextureRequestState.Pending && state != TextureRequestState.Started) done.Set();
++            });
++            done.Wait(45000);
++            if (tex == null) return null;
++            try
++            {
++                if (!tex.Decode()) { why = "the picture could not be decoded"; return null; }
++                using var bmp = Bitmap(tex.Image);
++                SkiaSharp.SKBitmap use = bmp;
++                int max = Math.Max(bmp.Width, bmp.Height);
++                if (max > 1024)
++                {
++                    float k = 1024f / max;
++                    use = bmp.Resize(new SkiaSharp.SKImageInfo(Math.Max(1, (int)(bmp.Width * k)), Math.Max(1, (int)(bmp.Height * k))), new SkiaSharp.SKSamplingOptions(SkiaSharp.SKFilterMode.Linear, SkiaSharp.SKMipmapMode.Linear));
++                }
++                using var img = SkiaSharp.SKImage.FromBitmap(use);
++                using var enc = img.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
++                var bytes = enc.ToArray();
++                if (!ReferenceEquals(use, bmp)) use.Dispose();
++                return bytes;
++            }
++            catch (Exception e) { why = "the picture could not be decoded: " + e.Message; return null; }
++        }
++
++        [About("Does something with an inventory item or folder: add, wear, remove, rez, give, rename, move, trash, restore, newfolder, emptytrash, read, play, stop, sound, image, teleport")]
++        [ReturnHints("what was done (read: the notecard's text)")]
++        [ArgHints("action", "add (attach without replacing), wear (replace), remove (take off), rez, give, rename, move, trash, restore, newfolder, emptytrash, read (notecard / full-perm script), play (sound at the bot, animation, gesture), stop (animation), sound (the sound as base64 Ogg), image (a texture as base64 PNG), teleport (landmark)", "Text")]
++        [ArgHints("id", "item or folder key", "Text")]
++        [ArgHints("arg", "give: avatar name or key; rename/newfolder: the name; move: target folder key; else none", "Text", "none")]
++        [CmdTypeDo()]
++        public object CompanionInvDo(string action, string id, string arg)
++        {
++            var c = GetClient();
++            var sim = c.Network.CurrentSim;
++            string a = (action ?? "").Trim().ToLowerInvariant();
++            string val = arg == "none" ? "" : (arg ?? "").Trim();
++            var item = Item(id);
++            var folder = item == null ? Folder(id) : null;
++            try
++            {
++                switch (a)
++                {
++                    case "emptytrash":
++                        c.Inventory.EmptyTrash();
++                        return BasicReply("Trash emptied", [action]);
++                    case "newfolder":
++                        {
++                            if (val == "") return Failure("give the new folder a name", [action]);
++                            UUID parent = folder?.UUID ?? c.Inventory.Store.RootFolder.UUID;
++                            c.Inventory.CreateFolder(parent, val);
++                            return BasicReply("folder '" + val + "' made", [action]);
++                        }
++                }
++                if (item == null && folder == null) return Failure("not found – refresh the list", [action, id]);
++                if (folder != null)
++                {
++                    var contents = (c.Inventory.FolderContents(folder.UUID, c.Self.AgentID, false, true, InventorySortOrder.ByName, TimeSpan.FromSeconds(20)) ?? [])
++                        .OfType<InventoryItem>().Select(Real).Where(i => i.InventoryType is InventoryType.Wearable or InventoryType.Object or InventoryType.Attachment).ToList();
++                    switch (a)
++                    {
++                        case "add": c.Appearance.AddToOutfit(contents, false); return BasicReply("added " + contents.Count + " things from '" + folder.Name + "'", [action]);
++                        case "wear":     // replace the outfit, as the HUD's and the app's outfits do
++                            {
++                                var res = new InventoryCommands(master).SwapOutfit(folder.UUID.ToString());
++                                bool ok = JsonSerializer.Serialize(res).Contains("\"status\":true");
++                                return ok ? BasicReply("now wearing '" + folder.Name + "'", [action]) : Failure("could not wear '" + folder.Name + "'", [action]);
++                            }
++                        case "remove": c.Appearance.RemoveFromOutfit(contents); return BasicReply("took off what is in '" + folder.Name + "'", [action]);
++                        case "give":
++                            {
++                                UUID to = CompanionNames.Find(c, val, 8000);
++                                if (to == UUID.Zero) return Failure("who is that? (name or key)", [action, val]);
++                                c.Inventory.GiveFolder(folder.UUID, folder.Name, to, false);
++                                return BasicReply("gave the folder '" + folder.Name + "'", [action]);
++                            }
++                        case "rename":
++                            if (val == "") return Failure("give the new name", [action]);
++                            c.Inventory.UpdateFolderProperties(folder.UUID, folder.ParentUUID, val, folder.PreferredType);
++                            return BasicReply("renamed to '" + val + "'", [action]);
++                        case "move":
++                            if (!UUID.TryParse(val, out UUID tf)) return Failure("which folder?", [action]);
++                            c.Inventory.MoveFolder(folder.UUID, tf);
++                            return BasicReply("moved '" + folder.Name + "'", [action]);
++                        case "trash":
++                            if (folder.PreferredType != FolderType.None) return Failure("a system folder stays", [action]);
++                            c.Inventory.MoveFolder(folder.UUID, Trash);
++                            return BasicReply("'" + folder.Name + "' is in the Trash", [action]);
++                        case "restore":
++                            c.Inventory.MoveFolder(folder.UUID, c.Inventory.Store.RootFolder.UUID);
++                            return BasicReply("'" + folder.Name + "' is back at the top level", [action]);
++                    }
++                    return Failure("not possible with a folder", [action]);
++                }
++                var real = Real(item);
++                switch (a)
++                {
++                    case "add": c.Appearance.AddToOutfit(real, false); return BasicReply("added " + real.Name, [action]);
++                    case "wear": c.Appearance.AddToOutfit(real, true); return BasicReply("wearing " + real.Name, [action]);
++                    case "remove": c.Appearance.RemoveFromOutfit(real); return BasicReply("took off " + real.Name, [action]);
++                    case "rez":     // arg: front (default), ground, me, or "x,y,z" in the region
++                        {
++                            if (real.InventoryType != InventoryType.Object) return Failure("only objects can be rezzed", [action]);
++                            if (sim == null) return Failure("not in a region", [action]);
++                            var (pos, onGround, where) = RezPlace(c, sim, val);
++                            if (where == null) return Failure("where? (front, ground, me or x,y,z)", [action, val]);
++                            Rez(c, sim, real, pos, onGround);
++                            return BasicReply("rezzing " + real.Name + " " + where + " (where the bot may build)", [action]);
++                        }
++                    case "give":
++                        {
++                            UUID to = CompanionNames.Find(c, val, 8000);
++                            if (to == UUID.Zero) return Failure("who is that? (name or key)", [action, val]);
++                            if ((real.Permissions.OwnerMask & PermissionMask.Transfer) == 0) return Failure("no transfer permission", [action]);
++                            c.Inventory.GiveItem(real.UUID, real.Name, real.AssetType, to, false);
++                            return BasicReply("gave " + real.Name, [action]);
++                        }
++                    case "rename":
++                        if (val == "") return Failure("give the new name", [action]);
++                        c.Inventory.MoveItem(item.UUID, item.ParentUUID, val);
++                        return BasicReply("renamed to '" + val + "'", [action]);
++                    case "move":
++                        if (!UUID.TryParse(val, out UUID tfi)) return Failure("which folder?", [action]);
++                        c.Inventory.MoveItem(item.UUID, tfi);
++                        return BasicReply("moved " + item.Name, [action]);
++                    case "trash":
++                        if (WornAttachments().ContainsKey(real.UUID) || WornWearables().Contains(real.UUID)) c.Appearance.RemoveFromOutfit(real);
++                        c.Inventory.MoveItem(item.UUID, Trash);
++                        return BasicReply(item.Name + " is in the Trash", [action]);
++                    case "restore":
++                        {
++                            UUID home = c.Inventory.FindFolderForType(item.AssetType);
++                            if (home == UUID.Zero || home == Trash) home = c.Inventory.Store.RootFolder.UUID;
++                            c.Inventory.MoveItem(item.UUID, home);
++                            return BasicReply(item.Name + " is back", [action]);
++                        }
++                    case "read":
++                        {
++                            if (real.AssetType is not (AssetType.Notecard or AssetType.LSLText)) return Failure("only notecards and scripts can be read", [action]);
++                            if (real.AssetType == AssetType.LSLText && (real.Permissions.OwnerMask & (PermissionMask.Modify | PermissionMask.Copy | PermissionMask.Transfer)) != (PermissionMask.Modify | PermissionMask.Copy | PermissionMask.Transfer))
++                                return Failure("a script can only be read with full permissions", [action]);
++                            string text = null;
++                            using var done = new ManualResetEventSlim();
++                            c.Assets.RequestInventoryAsset(real, true, UUID.Random(), (t, asset) =>
++                            {
++                                if (t.Success && asset is AssetNotecard n) { n.Decode(); text = n.BodyText; }
++                                else if (t.Success && asset is AssetScriptText st) { st.Decode(); text = st.Source; }
++                                done.Set();
++                            });
++                            done.Wait(20000);
++                            return text == null ? Failure("could not read it", [action]) : BasicReply(text, [action]);
++                        }
++                    case "play":     // in-world: a sound at the bot, an animation on the bot, a gesture
++                        switch (real.AssetType)
++                        {
++                            case AssetType.Sound:
++                                if (sim == null) return Failure("not in a region", [action]);
++                                c.Sound.SendSoundTrigger(real.AssetUUID, sim, c.Self.SimPosition, 1.0f);
++                                return BasicReply("playing " + real.Name + " at the bot", [action]);
++                            case AssetType.Animation:
++                                c.Self.AnimationStart(real.AssetUUID, true);
++                                return BasicReply("the bot plays " + real.Name, [action]);
++                            case AssetType.Gesture:
++                                c.Self.PlayGesture(real.AssetUUID);
++                                return BasicReply("the bot plays the gesture " + real.Name, [action]);
++                        }
++                        return Failure("only sounds, animations and gestures can be played", [action]);
++                    case "stop":
++                        if (real.AssetType != AssetType.Animation) return Failure("only animations can be stopped", [action]);
++                        c.Self.AnimationStop(real.AssetUUID, true);
++                        return BasicReply("stopped " + real.Name, [action]);
++                    case "sound":    // the sound itself for the app to play (Ogg Vorbis, base64)
++                        {
++                            if (real.AssetType != AssetType.Sound) return Failure("not a sound", [action]);
++                            byte[] data = null;
++                            using var done = new ManualResetEventSlim();
++                            c.Assets.RequestAsset(real.AssetUUID, AssetType.Sound, true, (t, asset) => { if (t.Success) data = asset.AssetData; done.Set(); });
++                            done.Wait(30000);
++                            return data == null ? Failure("could not get the sound", [action]) : BasicReply(Convert.ToBase64String(data), [action]);
++                        }
++                    case "image":    // a texture or snapshot as PNG (base64), at most 1024 px
++                        {
++                            if (real.AssetType != AssetType.Texture) return Failure("not a picture", [action]);
++                            byte[] png = Png(c, real.AssetUUID, out string why);
++                            return png == null ? Failure(why, [action]) : BasicReply(Convert.ToBase64String(png), [action]);
++                        }
++                    case "teleport":     // a landmark: the bot goes there
++                        {
++                            if (real.AssetType != AssetType.Landmark) return Failure("not a landmark", [action]);
++                            UUID lm = real.AssetUUID;
++                            string lname = real.Name;
++                            System.Threading.Tasks.Task.Run(() =>
++                            {
++                                bool ok = c.Self.Teleport(lm);
++                                LogFormater.Info("[Companion] landmark teleport to " + lname + ": " + (ok ? "arrived" : c.Self.TeleportMessage));
++                            });
++                            return BasicReply("the bot teleports to " + lname, [action]);
++                        }
++                }
++                return Failure("unknown action", [action]);
++            }
++            catch (Exception e) { return Failure(e.Message, [action, id]); }
++        }
++    }
++}
 diff --git a/SecondBotEvents/Commands/CompanionPeople.cs b/SecondBotEvents/Commands/CompanionPeople.cs
 new file mode 100644
-index 0000000..50fd06f
+index 0000000..d6ef593
 --- /dev/null
 +++ b/SecondBotEvents/Commands/CompanionPeople.cs
-@@ -0,0 +1,729 @@
+@@ -0,0 +1,814 @@
 +// AvieBoter patch: sharing the bot (who may use it with a HUD), a log of who comes and goes, radar, following
 +// and walking (used when a teleport is rerouted to a landing point or refused).
 +using OpenMetaverse;
@@ -1996,14 +2807,49 @@ index 0000000..50fd06f
 +        public static void Set(string csv) { people = Parse(csv); }
 +
 +        /// <summary>The last reply address (the HUD's web address) of each person's HUD, with when it was seen.</summary>
-+        public static readonly ConcurrentDictionary<UUID, (string url, string name, DateTime seen)> HudUrls = new();
++        public static readonly ConcurrentDictionary<UUID, (string url, string name, DateTime seen)> HudUrls = LoadHudUrls();
++
++        // kept in the bot's folder, so a restarted bot (update, lost connection) still reaches the HUDs it knew
++        const string HudUrlFile = "hud-urls.txt";
++        static DateTime hudUrlsSaved = DateTime.MinValue;
++
++        static ConcurrentDictionary<UUID, (string url, string name, DateTime seen)> LoadHudUrls()
++        {
++            var d = new ConcurrentDictionary<UUID, (string url, string name, DateTime seen)>();
++            try
++            {
++                if (!System.IO.File.Exists(HudUrlFile)) return d;
++                foreach (var line in System.IO.File.ReadAllLines(HudUrlFile))
++                {
++                    var f = line.Split('\t');
++                    if (f.Length < 4 || !UUID.TryParse(f[0], out var id) || !long.TryParse(f[3], out long t)) continue;
++                    var seen = new DateTime(t, DateTimeKind.Utc).ToLocalTime();
++                    if (DateTime.Now - seen < TimeSpan.FromDays(2) && f[1].StartsWith("http")) d[id] = (f[1], f[2], seen);
++                }
++            }
++            catch { }
++            return d;
++        }
++
++        static void SaveHudUrls()
++        {
++            try
++            {
++                hudUrlsSaved = DateTime.Now;
++                System.IO.File.WriteAllLines(HudUrlFile, HudUrls.Select(kv => kv.Key + "\t" + kv.Value.url + "\t" + (kv.Value.name ?? "").Replace("\t", " ") + "\t" + kv.Value.seen.ToUniversalTime().Ticks));
++            }
++            catch { }
++        }
 +
 +        static void NoteHudUrl(UUID ownerId, string name, string message)
 +        {
 +            int a = message.IndexOf("#|#"), b = message.IndexOf("@@@");
 +            if (a < 0 || b < a) return;
 +            string url = message.Substring(a + 3, b - a - 3);
-+            if (url.StartsWith("http://") || url.StartsWith("https://")) HudUrls[ownerId] = (url, name, DateTime.Now);
++            if (!url.StartsWith("http://") && !url.StartsWith("https://")) return;
++            bool changed = !HudUrls.TryGetValue(ownerId, out var old) || old.url != url;
++            HudUrls[ownerId] = (url, name, DateTime.Now);
++            if (changed || DateTime.Now - hudUrlsSaved > TimeSpan.FromMinutes(30)) SaveHudUrls();
 +        }
 +
 +        public static bool IsPerson(string name) => people.Count == 0 || people.Contains(CompanionNames.Norm(name));
@@ -2152,9 +2998,22 @@ index 0000000..50fd06f
 +        static HashSet<UUID> present = new();
 +        static ulong presentHandle = 0;
 +
++        // who is flying (from the region's animation updates: the default fly / hover animations are always sent, AO or not)
++        static readonly System.Collections.Concurrent.ConcurrentDictionary<UUID, bool> flyingNow = new();
++        static readonly HashSet<UUID> FlyAnims = [Animations.FLY, Animations.FLYSLOW, Animations.HOVER, Animations.HOVER_UP, Animations.HOVER_DOWN];
++        static GridClient animHooked;
++        static void OnAnim(object s, AvatarAnimationEventArgs e) => flyingNow[e.AvatarID] = e.Animations.Any(a => FlyAnims.Contains(a.AnimationID));
++        public static bool IsFlying(UUID id) => flyingNow.TryGetValue(id, out bool f) && f;
++
 +        public static void Attach(GridClient c)
 +        {
 +            radarClient = c;
++            if (!ReferenceEquals(animHooked, c))
++            {
++                if (animHooked != null) animHooked.Avatars.AvatarAnimation -= OnAnim;
++                c.Avatars.AvatarAnimation += OnAnim;
++                animHooked = c;
++            }
 +            CompanionNames.Hook(c);
 +            radarTimer ??= new Timer(_ => RadarTick(), null, 5000, 5000);
 +        }
@@ -2395,6 +3254,9 @@ index 0000000..50fd06f
 +        }
 +
 +        public static string FollowInfo => followId == UUID.Zero ? "" : followName;
++        public static string FollowKey => followId == UUID.Zero ? "" : followId.ToString();
++        public static double FollowDist => Math.Round(followDist, 2);
++        public static double FollowAngle => Math.Round(followAngle, 1);
 +
 +        public static void StopFollow(GridClient c, string why = "")
 +        {
@@ -2403,6 +3265,7 @@ index 0000000..50fd06f
 +            followId = UUID.Zero;
 +            followTimer?.Change(Timeout.Infinite, Timeout.Infinite);
 +            if (walking) { c?.Self.AutoPilotCancel(); walking = false; }
++            if (c != null && c.Self.Movement.AlwaysRun) { c.Self.Movement.AlwaysRun = false; c.Self.Movement.SendUpdate(true); }
 +        }
 +
 +        [About("Follows an avatar at a distance and angle (180 = behind, 90 = its left, 270 = its right, 0 = in front); target stop ends it")]
@@ -2447,7 +3310,7 @@ index 0000000..50fd06f
 +            movedAt = DateTime.Now; movedFrom = c.Self.SimPosition;
 +            if (c.Self.SittingOn != 0) { c.Self.Stand(); Thread.Sleep(800); }
 +            followTimer ??= new Timer(_ => FollowTick(), null, Timeout.Infinite, Timeout.Infinite);
-+            followTimer.Change(200, 1000);
++            followTimer.Change(200, 500);      // twice a second: flying is fast
 +            if (fresh) CompanionEvents.Add("follow", id, followName, c.Network.CurrentSim?.Name, followDist + " m / " + followAngle + "°");
 +            LogFormater.Info("[Companion] following " + followName + " at " + followDist + " m, " + followAngle + "°");
 +            return "following " + followName + " – " + followDist.ToString("0.#", inv) + " m " + Where(followAngle);
@@ -2499,6 +3362,19 @@ index 0000000..50fd06f
 +                Vector3 fwd = Vector3.UnitX * t.Rot;
 +                double yaw = Math.Atan2(fwd.Y, fwd.X) + followAngle * Math.PI / 180.0;
 +                Vector3 goal = t.Pos + new Vector3((float)Math.Cos(yaw) * followDist, (float)Math.Sin(yaw) * followDist, 0f);
++                // flying: aim where they will be in a moment, so the bot keeps the distance instead of trailing behind
++                bool theyFly = t.Precise && IsFlying(t.Id);
++                float theirSpeed = 0f;
++                if (t.Handle == sim.Handle)
++                {
++                    var av = sim.ObjectsAvatars.Values.FirstOrDefault(x => x.ID == t.Id);
++                    if (av != null)
++                    {
++                        theirSpeed = new Vector2(av.Velocity.X, av.Velocity.Y).Length();
++                        if (theyFly && av.Velocity.Length() > 1f) goal += av.Velocity * 0.8f;
++                        else if (theirSpeed > 1f) goal += new Vector3(av.Velocity.X, av.Velocity.Y, 0f) * 0.4f;
++                    }
++                }
 +                var gGoal = CompanionRadarData.Global(t.Handle, goal);
 +                var gMe = CompanionRadarData.Global(sim.Handle, c.Self.SimPosition);
 +                double d2 = Math.Sqrt(Math.Pow(gGoal.X - gMe.X, 2) + Math.Pow(gGoal.Y - gMe.Y, 2));
@@ -2509,6 +3385,23 @@ index 0000000..50fd06f
 +                    if (DateTime.Now - lastTp < TimeSpan.FromSeconds(15)) return;
 +                    Vector3 land = new(Math.Clamp(goal.X, 1f, 255f), Math.Clamp(goal.Y, 1f, 255f), t.Precise ? goal.Z : t.Pos.Z);
 +                    TeleportOrAsk(c, t.Handle, land, t.Handle != sim.Handle ? "other region" : d2.ToString("0") + " m away");
++                    return;
++                }
++                bool meFly = c.Self.Movement.Fly;
++                // they run (walking is about 3.2 m/s, running about 5) or the bot fell behind: run; walk again when close
++                if (!meFly)
++                {
++                    bool run = theirSpeed > 3.6f || d2 > followDist + 4;
++                    bool walkAgain = theirSpeed < 3.0f && d2 < followDist + 1.5;
++                    if (run && !c.Self.Movement.AlwaysRun) { c.Self.Movement.AlwaysRun = true; c.Self.Movement.SendUpdate(true); }
++                    else if (walkAgain && c.Self.Movement.AlwaysRun) { c.Self.Movement.AlwaysRun = false; c.Self.Movement.SendUpdate(true); }
++                }
++                // they walk again (landed) and the bot still flies near them: stop flying - it drops down beside them
++                if (meFly && t.Precise && !theyFly && dz < -1.5 && d2 <= Math.Max(4.0, followDist + 2))
++                {
++                    if (walking) { c.Self.AutoPilotCancel(); walking = false; }
++                    c.Self.Fly(false);
++                    LogFormater.Info("[Companion] follow: " + followName + " landed - landing too");
 +                    return;
 +                }
 +                if (d2 > 1.2 || (t.Precise && Math.Abs(dz) > 2.5))
@@ -2531,8 +3424,10 @@ index 0000000..50fd06f
 +                    if (!walking || Vector3.Distance(goal, lastGoal) > 0.7f || (now - movedAt > TimeSpan.FromSeconds(3) && now - issuedAt > TimeSpan.FromSeconds(5)))
 +                    {
 +                        issuedAt = now;
-+                        bool fly = t.Precise && Math.Abs(dz) > 2.5;
-+                        c.Self.Fly(fly);
++                        // fly while they fly or are clearly higher; flying down to someone on the ground keeps flying
++                        // until close (then the landing above takes over); never switch flying off in mid-air
++                        bool fly = t.Precise && (theyFly || dz > 2.5 || (meFly && dz < -2.5));
++                        if (fly != meFly) c.Self.Fly(fly);
 +                        c.Self.AutoPilot(gGoal.X, gGoal.Y, t.Precise ? goal.Z : c.Self.SimPosition.Z);
 +                        lastGoal = goal;
 +                        walking = true;
@@ -2544,6 +3439,7 @@ index 0000000..50fd06f
 +                    walking = false;
 +                    if (t.Handle == sim.Handle) c.Self.Movement.TurnToward(t.Pos);
 +                }
++                if (!walking && theyFly && !c.Self.Movement.Fly) c.Self.Fly(true);      // hover with them, do not drop
 +            }
 +            catch (Exception e) { LogFormater.Warn("[Companion] follow: " + e.Message); }
 +        }
@@ -2589,6 +3485,913 @@ index 0000000..50fd06f
 +                if (!string.IsNullOrEmpty(replyto) && replyto != "none") comp.Reply(replyto, "CompanionGoTo", r);
 +            });
 +            return BasicReply("started", [avatar]);
++        }
++    }
++}
+diff --git a/SecondBotEvents/Commands/CompanionPuppet.cs b/SecondBotEvents/Commands/CompanionPuppet.cs
+new file mode 100644
+index 0000000..ca59808
+--- /dev/null
++++ b/SecondBotEvents/Commands/CompanionPuppet.cs
+@@ -0,0 +1,336 @@
++// AvieBoter patch: moving the bot by hand from the app's Puppeteer window, like a viewer's move controls. Each command
++// holds a direction for a short time; the window repeats it while a button or key is held, so the bot stops by itself
++// when the window or the connection goes away.
++using OpenMetaverse;
++using SecondBotEvents.Services;
++using System;
++using System.Collections.Generic;
++using System.Linq;
++using System.Threading;
++
++namespace SecondBotEvents.Commands
++{
++    [ClassInfo("Move controls for the AvieBoter app's Puppeteer window")]
++    public class CompanionPuppet(EventsSecondBot setmaster) : CommandsAPI(setmaster)
++    {
++        static readonly object gate = new();
++        static readonly Dictionary<string, DateTime> held = new();
++        static Timer tick;
++        static GridClient client;
++        static double heading;          // radians, 0 = east, counter-clockwise
++        static DateTime lastMove = DateTime.MinValue;
++        static bool moving;
++        static Vector3 endPos;          // where the last hand movement ended: the bot still faces 'heading' there
++        static bool settled = true;     // endPos is where it came to rest (it slides on a little after the keys)
++
++        // Viewers draw another avatar's body turning only in steps (it may stay up to ~45° behind while standing) and
++        // its head straight with the body unless the avatar says where it looks. So, like a viewer, the bot tells
++        // everyone it looks ahead the way it faces: the head turns at once and the body follows.
++        static readonly UUID lookId = UUID.Random();
++        static bool looking;
++        static double lookHeading;
++        static Vector3 lookPos;
++        static DateTime lookSent = DateTime.MinValue;
++        static Timer watch;
++
++        // diagnostics: what the bot sends and what the region reports back about its avatar
++        static readonly List<string> trace = new();
++        static DateTime traceUntil = DateTime.MinValue, traceStart;
++        static GridClient traced;
++        static void Trace(string src, double yaw, Vector3 p, Vector3 v)
++        {
++            if (DateTime.Now > traceUntil) return;
++            lock (trace) if (trace.Count < 2000) trace.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
++                "{0:0} {1} {2:0.0} {3:0.00} {4:0.00} {5:0.00} {6:0.00}", (DateTime.Now - traceStart).TotalMilliseconds, src, yaw * 180 / Math.PI, p.X, p.Y, v.X, v.Y));
++        }
++
++        [About("Diagnostics for the Puppeteer: start records for 30 s what the bot sends and what the region reports about it; get returns it")]
++        [ReturnHints("lines: ms source yaw x y vx vy")]
++        [ArgHints("mode", "start or get", "Text", "get")]
++        [CmdTypeGet()]
++        public object CompanionPuppetTrace(string mode)
++        {
++            var c = GetClient();
++            if (c == null) return Failure("not online");
++            if ((mode ?? "").Trim().ToLowerInvariant() == "start")
++            {
++                if (traced != c)
++                {
++                    traced = c;
++                    c.Objects.TerseObjectUpdate += (o, e) => { if (e.Update.LocalID == c.Self.LocalID) Trace("sim", Yaw(e.Update.Rotation), e.Update.Position, e.Update.Velocity); };
++                    c.Objects.AvatarUpdate += (o, e) => { if (e.Avatar.LocalID == c.Self.LocalID) Trace("full", Yaw(e.Avatar.Rotation), e.Avatar.Position, e.Avatar.Velocity); };
++                    c.Avatars.ViewerEffectLookAt += (o, e) =>
++                    {
++                        if (e.SourceID != c.Self.AgentID) return;
++                        Utils.LongToUInts(c.Network.CurrentSim?.Handle ?? 0, out uint gx, out uint gy);
++                        var t = new Vector3((float)(e.TargetPosition.X - gx), (float)(e.TargetPosition.Y - gy), (float)e.TargetPosition.Z);
++                        Trace("echo-" + e.LookType, 0, t, Vector3.Zero);
++                    };
++                }
++                lock (trace) trace.Clear();
++                traceStart = DateTime.Now; traceUntil = DateTime.Now.AddSeconds(30);
++                return BasicReply("tracing");
++            }
++            lock (trace) return BasicReply(string.Join(";", trace));
++        }
++
++        static void Look(GridClient c, bool force)
++        {
++            var pos = c.Self.SimPosition;
++            bool same = Math.Abs(Math.IEEERemainder(heading - lookHeading, 2 * Math.PI)) < 0.03 && Vector3.Distance(pos, lookPos) < 0.3f;
++            if (!force && looking && same && DateTime.Now - lookSent < TimeSpan.FromSeconds(10)) return;
++            if (!force && looking && DateTime.Now - lookSent < TimeSpan.FromMilliseconds(200)) return;
++            var ahead = new Vector3d(Math.Cos(heading) * 20, Math.Sin(heading) * 20, 0.6);   // far, so a stale or sliding position hardly turns the head
++            c.Self.LookAtEffect(c.Self.AgentID, UUID.Zero, c.Self.GlobalPosition + ahead, LookAtType.Focus, lookId);
++            Trace("look", heading, pos, Vector3.Zero);
++            looking = true; lookHeading = heading; lookPos = pos; lookSent = DateTime.Now;
++            watch ??= new Timer(_ => Watch(), null, Timeout.Infinite, Timeout.Infinite);
++            watch.Change(1000, 1000);
++        }
++
++        static void Unlook(GridClient c)
++        {
++            if (!looking) return;
++            looking = false;
++            watch?.Change(Timeout.Infinite, Timeout.Infinite);
++            try { c.Self.LookAtEffect(c.Self.AgentID, UUID.Zero, Vector3d.Zero, LookAtType.None, lookId); } catch { }
++            Trace("unlook", heading, c.Self.SimPosition, Vector3.Zero);
++        }
++
++        /// <summary>Keeps the look while the bot stands where it was left (repeated now and then for people who arrive);
++        /// drops it once something else moved it, sat it down or took it away.</summary>
++        static void Watch()
++        {
++            var c = client;
++            if (c == null) return;
++            try
++            {
++                lock (gate)
++                {
++                    if (moving || !looking) return;
++                    if (!settled && DateTime.Now - lastMove < TimeSpan.FromSeconds(5) && c.Self.Velocity.Length() > 0.2f) return;   // still sliding
++                    if (!settled) { settled = true; endPos = c.Self.SimPosition; Look(c, true); return; }
++                    if (c.Network?.CurrentSim == null || c.Self.SittingOn != 0 || !StillThere(c)) Unlook(c);
++                    else Look(c, false);
++                }
++            }
++            catch (Exception e) { LogFormater.Warn("[Companion] puppet look: " + e.Message); }
++        }
++
++        /// <summary>The way a rotation faces on the ground, in radians (0 = east, counter-clockwise).</summary>
++        static double Yaw(Quaternion q)
++        {
++            var f = Vector3.UnitX * q;
++            return Math.Atan2(f.Y, f.X);
++        }
++
++        /// <summary>The bot's real facing as the region last reported it (its avatar object), else the agent's own value.</summary>
++        static double RealYaw(GridClient c)
++        {
++            var sim = c.Network.CurrentSim;
++            if (sim != null && c.Self.SittingOn == 0 && sim.ObjectsAvatars.TryGetValue(c.Self.LocalID, out var me)) return Yaw(me.Rotation);
++            return Yaw(c.Self.SimRotation);
++        }
++
++        /// <summary>Still standing where the last hand movement left it (nothing else moved or turned it since)?</summary>
++        static bool StillThere(GridClient c) =>
++            DateTime.Now - lastMove < TimeSpan.FromMinutes(10) && (!settled || Vector3.Distance(c.Self.SimPosition, endPos) < 1.5f);
++        static readonly string[] Holds = ["forward", "back", "left", "right", "turnleft", "turnright", "up", "down"];
++
++        [About("Moves the bot like a viewer's move controls. forward back left right turnleft turnright up down hold for 'ms'; stop, run, walk, fly, land, stand act at once")]
++        [ReturnHints("ok")]
++        [ArgHints("action", "forward, back, left, right, turnleft, turnright, up, down, stop, run, walk, fly, land or stand", "Text", "forward")]
++        [ArgHints("ms", "how long to hold it (100-3000 ms; repeat to keep going)", "Number", "500")]
++        [CmdTypeDo()]
++        public object CompanionMove(string action, string ms)
++        {
++            var c = GetClient();
++            if (c?.Network?.CurrentSim == null) return Failure("not online");
++            string a = (action ?? "").Trim().ToLowerInvariant();
++            int.TryParse(ms, out int t);
++            t = Math.Clamp(t <= 0 ? 500 : t, 100, 3000);
++            switch (a)
++            {
++                case "stop":
++                    lock (gate) held.Clear();
++                    Apply(c, true);
++                    return BasicReply("stopped");
++                case "run": c.Self.Movement.AlwaysRun = true; c.Self.Movement.SendUpdate(true); return BasicReply("running");
++                case "walk": c.Self.Movement.AlwaysRun = false; c.Self.Movement.SendUpdate(true); return BasicReply("walking");
++                case "fly": c.Self.Fly(true); return BasicReply("flying");
++                case "land": c.Self.Fly(false); return BasicReply("landing");
++                case "stand": c.Self.Stand(); return BasicReply("standing up");
++            }
++            if (!Holds.Contains(a)) return Failure("unknown action", [action]);
++            if (c.Self.SittingOn != 0) return Failure("the bot sits – press Stand first");
++            if (!string.IsNullOrEmpty(CompanionPeople.FollowInfo)) CompanionPeople.StopFollow(c, "moved by hand");
++            lock (gate)
++            {
++                // a new start keeps the facing the bot was given by hand; only when something else moved it
++                // (following, a seat, a teleport) the real facing is read again - else it would snap back
++                if (!moving && !StillThere(c)) heading = RealYaw(c);
++                held[a] = DateTime.Now.AddMilliseconds(t);
++                lastMove = DateTime.Now;
++                client = c;
++                tick ??= new Timer(_ => Tick(), null, Timeout.Infinite, Timeout.Infinite);
++                if (!moving) { moving = true; c.Self.AutoPilotCancel(); tick.Change(0, 100); }
++            }
++            return BasicReply("ok");
++        }
++
++        static void Tick()
++        {
++            var c = client;
++            if (c == null) return;
++            try
++            {
++                bool any;
++                lock (gate)
++                {
++                    foreach (var k in held.Where(kv => kv.Value < DateTime.Now).Select(kv => kv.Key).ToList()) held.Remove(k);
++                    any = held.Count > 0;
++                    if (held.ContainsKey("turnleft")) heading += 6 * Math.PI / 180;      // 60° a second
++                    if (held.ContainsKey("turnright")) heading -= 6 * Math.PI / 180;
++                }
++                Apply(c, !any);
++                if (!any) lock (gate) { moving = false; endPos = c.Self.SimPosition; settled = false; tick?.Change(Timeout.Infinite, Timeout.Infinite); }
++            }
++            catch (Exception e) { LogFormater.Warn("[Companion] puppet: " + e.Message); }
++        }
++
++        static void Apply(GridClient c, bool release)
++        {
++            var m = c.Self.Movement;
++            bool Has(string k) { lock (gate) return held.ContainsKey(k); }
++            m.AtPos = !release && Has("forward");
++            m.AtNeg = !release && Has("back");
++            m.LeftPos = !release && Has("left");
++            m.LeftNeg = !release && Has("right");
++            m.UpPos = !release && Has("up");
++            m.UpNeg = !release && Has("down");
++            var rot = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)heading);
++            m.BodyRotation = rot;
++            m.HeadRotation = rot;
++            m.Camera.Position = c.Self.SimPosition;
++            m.Camera.LookDirection(new Vector3((float)Math.Cos(heading), (float)Math.Sin(heading), 0));
++            m.SendUpdate(true);
++            Trace(release ? "rel" : "sent", heading, c.Self.SimPosition, c.Self.Velocity);
++            lock (gate) Look(c, release);
++        }
++
++        /// <summary>A place from a SLURL (maps.secondlife.com/secondlife/Region/x/y/z, secondlife://Region/x/y/z,
++        /// secondlife:///app/teleport/...), "Region/x/y/z", or just "x y z" / "x,y,z" in the bot's region.</summary>
++        public static (string region, Vector3 pos)? ParsePlace(string text, string currentRegion)
++        {
++            string t = Uri.UnescapeDataString((text ?? "").Trim());
++            var inv = System.Globalization.CultureInfo.InvariantCulture;
++            var nums = t.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries);
++            if (nums.Length >= 2 && nums.Length <= 3 && nums.All(n => float.TryParse(n, System.Globalization.NumberStyles.Float, inv, out _)))
++            {
++                float z = nums.Length == 3 ? float.Parse(nums[2], inv) : 0;
++                return (currentRegion, new Vector3(float.Parse(nums[0], inv), float.Parse(nums[1], inv), z));
++            }
++            foreach (var pre in new[] { "secondlife:///app/teleport/", "secondlife:///app/region/", "secondlife://", "http://maps.secondlife.com/secondlife/", "https://maps.secondlife.com/secondlife/", "http://slurl.com/secondlife/", "https://slurl.com/secondlife/" })
++                if (t.StartsWith(pre, StringComparison.OrdinalIgnoreCase)) { t = t[pre.Length..]; break; }
++            var parts = t.Split('/', StringSplitOptions.RemoveEmptyEntries);
++            if (parts.Length == 0) return null;
++            float P(int i, float d) => parts.Length > i && float.TryParse(parts[i], System.Globalization.NumberStyles.Float, inv, out float v) ? v : d;
++            return (parts[0].Trim(), new Vector3(P(1, 128), P(2, 128), P(3, 0)));
++        }
++
++        [About("Goes to a place: walks there when it is near in the bot's region, else teleports close and walks the rest")]
++        [ReturnHints("result text")]
++        [ArgHints("place", "SLURL, Region/x/y/z, or x y z in the bot's region", "Text")]
++        [CmdTypeDo()]
++        public object CompanionWalkTo(string place)
++        {
++            var c = GetClient();
++            var sim = c?.Network?.CurrentSim;
++            if (sim == null) return Failure("not online");
++            var p = ParsePlace(place, sim.Name);
++            if (p == null) return Failure("not a place – paste a SLURL or x y z", [place]);
++            var (region, pos) = p.Value;
++            if (!string.IsNullOrEmpty(CompanionPeople.FollowInfo)) CompanionPeople.StopFollow(c, "walking to a place");
++            if (c.Self.SittingOn != 0) { c.Self.Stand(); Thread.Sleep(800); }
++            if (pos.Z <= 0) pos.Z = c.Self.SimPosition.Z;
++            if (string.Equals(region, sim.Name, StringComparison.OrdinalIgnoreCase))
++            {
++                var comp = new Companion(master);
++                System.Threading.Tasks.Task.Run(() =>
++                {
++                    string r;
++                    try { r = comp.JoinFor(sim.Handle, pos, UUID.Zero, UUID.Zero, "none"); } catch (Exception e) { r = "error: " + e.Message; }
++                    LogFormater.Info("[Companion] walk to " + region + " " + pos + ": " + r);
++                });
++                return BasicReply("going to " + Math.Round(pos.X) + ", " + Math.Round(pos.Y) + ", " + Math.Round(pos.Z));
++            }
++            System.Threading.Tasks.Task.Run(() =>
++            {
++                bool ok = false;
++                try { ok = c.Self.Teleport(region, pos); } catch { }
++                LogFormater.Info("[Companion] teleport to " + region + " " + pos + ": " + (ok ? "arrived" : "failed"));
++            });
++            return BasicReply("teleporting to " + region);
++        }
++
++        [About("Comes to a person: walks or teleports when they are near the bot, else asks them for a teleport offer (no HUD needed)")]
++        [ReturnHints("result text")]
++        [ArgHints("avatar", "name or UUID", "Text")]
++        [CmdTypeDo()]
++        public object CompanionComeTo(string avatar)
++        {
++            var c = GetClient();
++            if (c?.Network?.CurrentSim == null) return Failure("not online");
++            if (!UUID.TryParse(avatar ?? "", out UUID id)) id = CompanionNames.Find(c, avatar ?? "", 10000);
++            if (id == UUID.Zero) return Failure("avatar not found", [avatar]);
++            var t = CompanionRadarData.Find(c, id);
++            if (t != null)
++            {
++                if (c.Self.SittingOn != 0) { c.Self.Stand(); Thread.Sleep(800); }
++                var comp = new Companion(master);
++                System.Threading.Tasks.Task.Run(() =>
++                {
++                    string r;
++                    try { r = comp.JoinFor(t.Handle, t.Pos, UUID.Zero, UUID.Zero, "none"); } catch (Exception e) { r = "error: " + e.Message; }
++                    LogFormater.Info("[Companion] come to " + t.Name + ": " + r);
++                });
++                return BasicReply("coming to " + t.Name);
++            }
++            c.Self.SendTeleportLureRequest(id, "I'm coming to you – please offer me a teleport, I accept it.");
++            LogFormater.Info("[Companion] come to " + avatar + ": too far to see - asked for a teleport offer");
++            return BasicReply("too far to see – sent a teleport request: accept it in your viewer and the bot comes");
++        }
++
++        [About("Switches the camera of a person's HUD (1.6+) on or off: it then watches the way the bot faces")]
++        [ReturnHints("sent")]
++        [ArgHints("avatar", "whose HUD (name or UUID; the HUD must have talked to the bot since it started)", "Text")]
++        [ArgHints("state", "on, off, or set:name=value for a camera setting (camd distance, camh height, camt tilt, cams side angle, caml lead in s, camp/camf lags; empty value = default)", "Text", "on")]
++        [CmdTypeDo()]
++        public object CompanionHudCam(string avatar, string state)
++        {
++            var (id, url, _) = CompanionAccess.FindHud(avatar);
++            if (id == UUID.Zero) return Failure("the bot does not know this person's HUD yet – touch the HUD once", [avatar]);
++            string st = (state ?? "").Trim();
++            string on = st.StartsWith("set:", StringComparison.OrdinalIgnoreCase) ? "set:" + st[4..]      // a camera setting, e.g. set:camd=5
++                : string.Equals(st, "off", StringComparison.OrdinalIgnoreCase) ? "off" : "on";
++            master.CommandsService.SmartCommandReply(url, System.Text.Json.JsonSerializer.Serialize(new { command = "CompanionCam", result = on }), "CompanionCam");
++            if (on == "on" || on == "off")
++            {
++                var self = master;
++                System.Threading.Tasks.Task.Run(() =>
++                {
++                    try { LogFormater.Info("[Companion] camera anchor: " + (on == "on" ? new CompanionBuild(self).AnchorOn(true) : new CompanionBuild(self).AnchorOff())); }
++                    catch (Exception e) { LogFormater.Warn("[Companion] camera anchor: " + e.Message); }
++                });
++            }
++            return BasicReply("sent " + on, [avatar]);
++        }
++
++        /// <summary>The bot's heading in degrees (0 = east, 90 = north), for the Puppeteer's map.</summary>
++        public static double Heading(GridClient c)
++        {
++            double h = moving || StillThere(c) ? heading : RealYaw(c);
++            return Math.Round(h * 180 / Math.PI, 1);
++        }
++    }
++}
+diff --git a/SecondBotEvents/Commands/CompanionWorld.cs b/SecondBotEvents/Commands/CompanionWorld.cs
+new file mode 100644
+index 0000000..159a440
+--- /dev/null
++++ b/SecondBotEvents/Commands/CompanionWorld.cs
+@@ -0,0 +1,559 @@
++// AvieBoter patch: the bot and the world around it, for the app - objects nearby (touch, sit, go to, take, take a
++// copy, wear, delete, return, look inside, info) and the menus, text boxes, permission questions and links that
++// objects send the bot (llDialog, llTextBox, llRequestPermissions, llLoadURL), answered from the app.
++using OpenMetaverse;
++using OpenMetaverse.Assets;
++using SecondBotEvents.Services;
++using System;
++using System.Collections.Generic;
++using System.Globalization;
++using System.Linq;
++using System.Text.Json;
++using System.Threading;
++
++namespace SecondBotEvents.Commands
++{
++    [ClassInfo("The world around the bot for the AvieBoter app: objects nearby and the menus objects send")]
++    public class CompanionWorld(EventsSecondBot setmaster) : CommandsAPI(setmaster)
++    {
++        static string J(object o) => JsonSerializer.Serialize(o, JsonOptions.UnsafeRelaxed);
++        static string F(float v) => v.ToString("0.##", CultureInfo.InvariantCulture);
++
++        /// <summary>Asks the region for the properties (name, owner, permissions …) of prims it has not told yet; waits up
++        /// to waitMs. Objects of others are deselected again at once.</summary>
++        void Props(Simulator sim, List<Primitive> prims, int waitMs)
++        {
++            var c = GetClient();
++            var ids = prims.Where(p => p.Properties == null).Select(p => p.LocalID).ToArray();
++            if (ids.Length == 0) return;
++            foreach (var chunk in ids.Chunk(100)) c.Objects.SelectObjects(sim, chunk, true);
++            DateTime until = DateTime.Now.AddMilliseconds(waitMs);
++            while (DateTime.Now < until && prims.Any(p => p.Properties == null)) Thread.Sleep(150);
++            foreach (var chunk in ids.Chunk(100)) c.Objects.DeselectObjects(sim, chunk);
++        }
++
++        Primitive Root(Simulator sim, string localId)
++        {
++            if (sim == null || !uint.TryParse(localId, out uint id)) return null;
++            return sim.ObjectsPrimitives.TryGetValue(id, out Primitive p) ? p : null;
++        }
++
++        object Obj(GridClient c, Primitive p, Vector3 me)
++        {
++            var pr = p.Properties;
++            UUID owner = pr?.OwnerID ?? p.OwnerID;
++            bool group = (p.Flags & PrimFlags.ObjectGroupOwned) != 0;
++            return new
++            {
++                lid = p.LocalID,
++                id = p.ID.ToString(),
++                name = pr?.Name ?? "",
++                desc = pr?.Description ?? "",
++                owner = owner.ToString(),
++                ownerName = group ? "(group)" : owner == c.Self.AgentID ? c.Self.Name : CompanionNames.Get(c, owner),
++                mine = owner == c.Self.AgentID,
++                dist = Math.Round(Vector3.Distance(me, p.Position), 1),
++                x = Math.Round(p.Position.X, 1), y = Math.Round(p.Position.Y, 1), z = Math.Round(p.Position.Z, 1),
++                touch = (p.Flags & PrimFlags.Touch) != 0,
++                scripted = (p.Flags & PrimFlags.Scripted) != 0,
++                pay = (p.Flags & PrimFlags.Money) != 0,
++                sit = p.ClickAction == ClickAction.Sit,
++                copy = (p.Flags & PrimFlags.ObjectCopy) != 0,
++                modify = (p.Flags & PrimFlags.ObjectModify) != 0,
++                sale = pr != null && pr.SaleType != SaleType.Not,
++                price = pr?.SalePrice ?? 0,
++                seated = c.Self.SittingOn == p.LocalID,
++                temp = (p.Flags & (PrimFlags.Temporary | PrimFlags.TemporaryOnRez)) != 0
++            };
++        }
++
++        [About("Lists the objects around the bot (nearest first): name, owner, distance and what can be done with them")]
++        [ReturnHints("json {sitting, region, range, objects:[{lid, id, name, owner, ownerName, mine, dist, touch, sit, copy, modify, sale, …}]}")]
++        [ArgHints("range", "metres around the bot: up to 64 at once; 96, 128 or 256 (= the whole region) make the bot look further for 3 minutes", "Text", "20")]
++        [ArgHints("find", "only objects whose name (or description) has this text – searches everything in range, not just the nearest; empty or none = all", "Text", "none")]
++        [CmdTypeGet()]
++        public object CompanionNearby(string range, string find)
++        {
++            string q = find == null || find == "none" ? "" : find.Trim();
++            var c = GetClient();
++            var sim = c.Network.CurrentSim;
++            if (sim == null) return Failure("not in a region", [range]);
++            float r = 20;
++            if (string.Equals(range, "mine", StringComparison.OrdinalIgnoreCase) || string.Equals(range, "region", StringComparison.OrdinalIgnoreCase)) r = 256;
++            else if (!float.TryParse(range, NumberStyles.Float, CultureInfo.InvariantCulture, out r)) r = 20;
++            r = Math.Clamp(r, 1, 256);
++            if (r > 64)
++            {
++                // the region sends objects only up to the bot's view distance: widen it for a while and wait for them
++                bool wider = !(DateTime.Now < CompanionChat.WideUntil && CompanionChat.WideFar >= r);
++                CompanionChat.WideFar = Math.Max(r, DateTime.Now < CompanionChat.WideUntil ? CompanionChat.WideFar : 0);
++                CompanionChat.WideUntil = DateTime.Now.AddMinutes(3);
++                if (wider)
++                {
++                    c.Self.Movement.Camera.Far = CompanionChat.WideFar;
++                    c.Self.Movement.SendUpdate(true);
++                    int last = -1;
++                    DateTime until = DateTime.Now.AddSeconds(10);
++                    while (DateTime.Now < until)       // until the count stops growing (at least 3 s)
++                    {
++                        Thread.Sleep(1500);
++                        int n = sim.ObjectsPrimitives.Count;
++                        if (n == last && DateTime.Now > until.AddSeconds(-7)) break;
++                        last = n;
++                    }
++                }
++            }
++            Vector3 me = c.Self.SimPosition;
++            var roots = sim.ObjectsPrimitives.Values.Where(p => p.ParentID == 0 && !p.IsAttachment).ToList();
++            float D(Primitive p) => Vector3.Distance(me, p.Position);
++            // the nearest 300 in range, and the bot's own ones in range in any case
++            var near = roots.Where(p => r >= 256 || D(p) <= r).OrderBy(D).ToList();     // the whole region: all the bot was sent
++            List<Primitive> list;
++            if (q != "")
++            {
++                // a name search looks at every object in range: ask for the names it does not know yet (may take a while)
++                Props(sim, near, Math.Clamp(near.Count(p => p.Properties == null) * 4, 3000, 15000));
++                list = near.Where(p => p.Properties != null && (p.Properties.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
++                    || (p.Properties.Description ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))).Take(300).ToList();
++            }
++            else
++            {
++                list = near.Take(300).Union(near.Where(p => p.OwnerID == c.Self.AgentID)).OrderBy(D).ToList();
++                Props(sim, list, 4000);
++            }
++            int unnamed = q != "" ? near.Count(p => p.Properties == null) : 0;
++            return BasicReply(J(new { sitting = c.Self.SittingOn, region = sim.Name, range = r, total = near.Count, find = q, unnamed, objects = list.Select(p => Obj(c, p, me)).ToList() }), [range, find]);
++        }
++
++        [About("Does something with an object near the bot: touch, sit, stand, go, take, copy, wear, delete, return, info, contents")]
++        [ReturnHints("what was done (info and contents: json)")]
++        [ArgHints("action", "touch, sit, stand, go (walk next to it), take (own: into inventory), copy (a copy into inventory), wear (own), delete (own or modifiable: to the Trash), return (to its owner), info, contents, rename, describe", "Text")]
++        [ArgHints("localId", "the object's local id (from CompanionNearby)", "Number")]
++        [ArgHints("arg", "rename: the new name; describe: the new description; else none", "Text", "none")]
++        [CmdTypeDo()]
++        public object CompanionObjectDo(string action, string localId, string arg)
++        {
++            var c = GetClient();
++            var sim = c.Network.CurrentSim;
++            string a = (action ?? "").Trim().ToLowerInvariant();
++            if (sim == null) return Failure("not in a region", [action]);
++            if (a == "stand") { c.Self.Stand(); return BasicReply("standing up", [action]); }
++            if (a == "newbox")
++            {
++                var (box, why) = new CompanionBuild(master).RezBox(string.IsNullOrWhiteSpace(arg) || arg == "none" ? "Object" : arg.Trim());
++                return box == null ? Failure(why, [action]) : BasicReply("a new box is in front of the bot", [action]);
++            }
++            var p = Root(sim, localId);
++            if (p == null) return Failure("the object is not there any more – refresh", [action, localId]);
++            var one = new List<Primitive> { p };
++            Props(sim, one, 3000);
++            string name = p.Properties?.Name ?? "the object";
++            bool mine = (p.Properties?.OwnerID ?? p.OwnerID) == c.Self.AgentID;
++            bool Gone(int ms)
++            {
++                DateTime until = DateTime.Now.AddMilliseconds(ms);
++                while (DateTime.Now < until) { if (!sim.ObjectsPrimitives.ContainsKey(p.LocalID)) return true; Thread.Sleep(200); }
++                return false;
++            }
++            try
++            {
++                switch (a)
++                {
++                    case "rename":
++                    case "describe":
++                        {
++                            if ((p.Flags & PrimFlags.ObjectModify) == 0) return Failure("the bot may not change " + name, [action]);
++                            if (a == "rename") { if (string.IsNullOrWhiteSpace(arg)) return Failure("which name?", [action]); c.Objects.SetName(sim, p.LocalID, arg.Trim()); }
++                            else c.Objects.SetDescription(sim, p.LocalID, arg == "none" ? "" : arg ?? "");
++                            return BasicReply(a == "rename" ? "renamed to " + arg.Trim() : "description changed", [action]);
++                        }
++                    case "touch":
++                        c.Self.Touch(p.LocalID);
++                        return BasicReply("touched " + name, [action]);
++                    case "sit":
++                        {
++                            var res = J(new Companion(master).CompanionSit(p.ID.ToString(), "none"));
++                            return res.Contains("busy") ? Failure("the bot is busy moving – try again in a moment", [action]) : BasicReply("sitting down on " + name, [action]);
++                        }
++                    case "go":
++                        {
++                            Utils.LongToUInts(sim.Handle, out uint gx, out uint gy);
++                            Vector3 me = c.Self.SimPosition, to = p.Position, d = me - to;
++                            d.Z = 0;
++                            float len = d.Length();
++                            Vector3 stop = len > 1.6f ? to + d / len * 1.5f : me;
++                            stop.Z = Math.Max(to.Z, me.Z);
++                            var res = J(new Companion(master).CompanionCome(gx.ToString(), gy.ToString(), F(stop.X), F(stop.Y), F(stop.Z), "none"));
++                            return res.Contains("busy") ? Failure("the bot is busy moving – try again in a moment", [action]) : BasicReply("going to " + name, [action]);
++                        }
++                    case "take":
++                        {
++                            if (!mine) return Failure("only the bot's own objects can be taken – try Take a copy", [action]);
++                            var got = new CompanionBuild(master).Take(p.LocalID, p.Properties?.Name ?? "");
++                            return got != null ? BasicReply(got.Name + " is in the inventory (Objects)", [action]) : Failure("the region did not give it back – it may not be the bot's to take here", [action]);
++                        }
++                    case "copy":
++                        {
++                            if ((p.Flags & PrimFlags.ObjectCopy) == 0) return Failure("the bot may not copy " + name, [action]);
++                            c.Inventory.RequestDeRezToInventory(p.LocalID, DeRezDestination.AgentInventoryCopy, c.Inventory.FindFolderForType(FolderType.Object), UUID.Random());
++                            return BasicReply("a copy of " + name + " goes to the inventory (Objects)", [action]);
++                        }
++                    case "wear":
++                        if (!mine) return Failure("the bot can only wear its own objects", [action]);
++                        c.Objects.AttachObject(sim, p.LocalID, (AttachmentPoint)((byte)AttachmentPoint.Default | 0x80), Quaternion.Identity);
++                        return BasicReply("wearing " + name, [action]);
++                    case "delete":
++                        c.Inventory.RequestDeRezToInventory(p.LocalID, DeRezDestination.TrashFolder, c.Inventory.FindFolderForType(FolderType.Trash), UUID.Random());
++                        return Gone(5000) ? BasicReply(name + " went to the bot's Trash", [action]) : Failure("the region did not delete " + name + " – the bot may not have the rights", [action]);
++                    case "return":
++                        c.Inventory.RequestDeRezToInventory(p.LocalID, DeRezDestination.ReturnToOwner, UUID.Zero, UUID.Random());
++                        return Gone(5000) ? BasicReply(name + " was returned to its owner", [action]) : Failure("the region did not return " + name + " – only its owner, the land owner or an estate manager may", [action]);
++                    case "info":
++                        {
++                            var pr = p.Properties;
++                            if (pr == null) return Failure("the region did not tell anything about it", [action]);
++                            string perms(PermissionMask m) => string.Join(", ", new[] { (m & PermissionMask.Modify) != 0 ? "modify" : null, (m & PermissionMask.Copy) != 0 ? "copy" : null, (m & PermissionMask.Transfer) != 0 ? "transfer" : null }.Where(x => x != null)) is var s && s != "" ? s : "none";
++                            return BasicReply(J(new
++                            {
++                                name = pr.Name, desc = pr.Description, id = p.ID.ToString(),
++                                owner = (p.Flags & PrimFlags.ObjectGroupOwned) != 0 ? "(group)" : CompanionNames.Get(c, pr.OwnerID, 3000),
++                                creator = CompanionNames.Get(c, pr.CreatorID, 3000),
++                                ownerPerms = perms(pr.Permissions.OwnerMask), nextPerms = perms(pr.Permissions.NextOwnerMask),
++                                everyoneCopy = (pr.Permissions.EveryoneMask & PermissionMask.Copy) != 0,
++                                sale = pr.SaleType.ToString(), price = pr.SalePrice,
++                                prims = 1 + sim.ObjectsPrimitives.Values.Count(x => x.ParentID == p.LocalID), scripted = (p.Flags & PrimFlags.Scripted) != 0,
++                                pos = F(p.Position.X) + ", " + F(p.Position.Y) + ", " + F(p.Position.Z)
++                            }), [action]);
++                        }
++                    case "contents":
++                        {
++                            var list = c.Inventory.GetTaskInventory(p.ID, p.LocalID, TimeSpan.FromSeconds(15)) ?? [];
++                            return BasicReply(J(list.OfType<InventoryItem>().Select(i => new { id = i.UUID.ToString(), name = i.Name, kind = i.InventoryType.ToString(),
++                                mod = (i.Permissions.OwnerMask & PermissionMask.Modify) != 0, copy = (i.Permissions.OwnerMask & PermissionMask.Copy) != 0 })), [action]);
++                        }
++                }
++                return Failure("unknown action", [action]);
++            }
++            catch (Exception e) { return Failure(e.Message, [action, localId]); }
++        }
++
++        /// <summary>Asks the region whether a script inside an object runs (null = no answer).</summary>
++        static bool? ScriptRunning(GridClient c, UUID obj, UUID script)
++        {
++            bool? r = null;
++            using var done = new ManualResetEventSlim();
++            void h(object s, ScriptRunningReplyEventArgs e) { if (e.ObjectID == obj && e.ScriptID == script) { r = e.IsRunning; done.Set(); } }
++            c.Inventory.ScriptRunningReply += h;
++            try { Thread.Sleep(700); c.Inventory.RequestGetScriptRunning(obj, script); done.Wait(5000); }
++            finally { c.Inventory.ScriptRunningReply -= h; }
++            return r;
++        }
++
++        [About("Works with what is inside an object: read or save a notecard / script, delete or take out an item, put an inventory item in, make a new script or notecard inside")]
++        [ReturnHints("text, json {saved, messages} or what was done")]
++        [ArgHints("action", "read, save, delete, take (into the bot's inventory), add (itemId = an item in the bot's inventory), newscript, newnote", "Text")]
++        [ArgHints("localId", "the object's local id", "Number")]
++        [ArgHints("itemId", "the item inside (or, for add, the inventory item; none for newscript / newnote)", "Text")]
++        [ArgHints("arg", "save: the whole text; newscript / newnote: the name; else none", "Text", "none")]
++        [CmdTypeDo()]
++        public object CompanionTaskDo(string action, string localId, string itemId, string arg)
++        {
++            var c = GetClient();
++            var sim = c.Network.CurrentSim;
++            string a = (action ?? "").Trim().ToLowerInvariant();
++            var p = Root(sim, localId);
++            if (p == null) return Failure("the object is not there any more – refresh", [action, localId]);
++            Props(sim, [p], 3000);
++            if ((p.Flags & PrimFlags.ObjectModify) == 0 && a != "read") return Failure("the bot may not change what is inside " + (p.Properties?.Name ?? "this object"), [action]);
++            UUID.TryParse(itemId ?? "", out UUID iid);
++            string text = arg == "none" ? "" : arg ?? "";
++            var inv = new CompanionInventory(master);
++            try
++            {
++                if (a is "newscript" or "newnote")
++                {
++                    bool script = a == "newscript";
++                    string nm = text.Trim() != "" ? text.Trim() : script ? "New Script" : "New Note";
++                    var made = inv.CreateText(c.Inventory.FindFolderForType(script ? FolderType.LSLText : FolderType.Notecard), nm, script, script ? CompanionInventory.NewScript : "", out string why);
++                    if (made == null) return Failure(why, [action]);
++                    if (script) c.Inventory.CopyScriptToTask(p.LocalID, made, true); else c.Inventory.UpdateTaskInventory(p.LocalID, made);
++                    return BasicReply((script ? "a new script '" : "a new notecard '") + nm + "' is inside (a copy stays in the bot's inventory)", [action]);
++                }
++                if (a == "add")
++                {
++                    var it = c.Inventory.Store.Contains(iid) ? c.Inventory.Store[iid] as InventoryItem : c.Inventory.FetchItem(iid, c.Self.AgentID, TimeSpan.FromSeconds(10));
++                    if (it == null) return Failure("that item is not in the bot's inventory", [action]);
++                    if (it.AssetType == AssetType.LSLText) c.Inventory.CopyScriptToTask(p.LocalID, it, true); else c.Inventory.UpdateTaskInventory(p.LocalID, it);
++                    return BasicReply(it.Name + " goes into " + (p.Properties?.Name ?? "the object"), [action]);
++                }
++                var items = c.Inventory.GetTaskInventory(p.ID, p.LocalID, TimeSpan.FromSeconds(15)) ?? [];
++                var ti = items.OfType<InventoryItem>().FirstOrDefault(i => i.UUID == iid);
++                if (ti == null) return Failure("that item is not inside any more – look again", [action]);
++                switch (a)
++                {
++                    case "read":
++                        {
++                            if (ti.AssetType is not (AssetType.Notecard or AssetType.LSLText)) return Failure("only notecards and scripts can be read", [action]);
++                            string got = null;
++                            using var done = new ManualResetEventSlim();
++                            c.Assets.RequestInventoryAsset(ti.AssetUUID, ti.UUID, p.ID, ti.OwnerID, ti.AssetType, true, UUID.Random(), (t, asset) =>
++                            {
++                                if (t.Success && asset is AssetNotecard n) { n.Decode(); got = n.BodyText; }
++                                else if (t.Success && asset is AssetScriptText st) { st.Decode(); got = st.Source; }
++                                done.Set();
++                            });
++                            done.Wait(20000);
++                            return got == null ? Failure("could not read it (no permission?)", [action]) : BasicReply(got, [action]);
++                        }
++                    case "save":
++                        {
++                            if (ti.AssetType is not (AssetType.Notecard or AssetType.LSLText)) return Failure("only notecards and scripts have a text", [action]);
++                            if ((ti.Permissions.OwnerMask & PermissionMask.Modify) == 0) return Failure("the bot may not change " + ti.Name, [action]);
++                            string why = "the save did not answer";
++                            var msgs = new List<string>();
++                            using var done = new ManualResetEventSlim();
++                            if (ti.AssetType == AssetType.LSLText)
++                                c.Inventory.RequestUpdateScriptTask(System.Text.Encoding.UTF8.GetBytes(text), ti.UUID, p.ID, true, true,
++                                    (up, st, comp, cm, id, asset) => { why = up ? "" : "not saved: " + st; if (cm != null) msgs.AddRange(cm); if (up && !comp && msgs.Count == 0) msgs.Add("did not compile"); done.Set(); });
++                            else
++                            {
++                                var nc = new AssetNotecard { BodyText = text };
++                                nc.Encode();
++                                c.Inventory.RequestUpdateNotecardTask(nc.AssetData, ti.UUID, p.ID, (ok, st, id, asset) => { why = ok ? "" : "not saved: " + st; done.Set(); });
++                            }
++                            done.Wait(30000);
++                            if (why != "") return Failure(why, [action]);
++                            bool? running = null;
++                            if (ti.AssetType == AssetType.LSLText && !msgs.Any(m => m.Contains("ERROR", StringComparison.OrdinalIgnoreCase)))
++                            {
++                                c.Inventory.RequestSetScriptRunning(p.ID, ti.UUID, true);
++                                running = ScriptRunning(c, p.ID, ti.UUID);
++                            }
++                            return BasicReply(J(new { saved = true, messages = msgs, running }), [action]);
++                        }
++                    case "delete":
++                        c.Inventory.RemoveTaskInventory(p.LocalID, ti.UUID, sim);
++                        return BasicReply(ti.Name + " was deleted from inside", [action]);
++                    case "take":
++                        c.Inventory.MoveTaskInventory(p.LocalID, ti.UUID, c.Inventory.FindFolderForType(ti.AssetType), sim);
++                        return BasicReply(ti.Name + " goes into the bot's inventory" + ((ti.Permissions.OwnerMask & PermissionMask.Copy) == 0 ? " (no copy: it leaves the object)" : ""), [action]);
++                }
++                return Failure("unknown action", [action]);
++            }
++            catch (Exception e) { return Failure(e.Message, [action, localId]); }
++        }
++
++        [About("The menus, text boxes, permission questions and links objects sent the bot that are not answered yet")]
++        [ReturnHints("json [{id, t, kind (menu|text|permission|url), object, owner, message, buttons, perms, url, debit}]")]
++        [CmdTypeGet()]
++        public object CompanionMenus()
++        {
++            return BasicReply(CompanionMenuStore.List());
++        }
++
++        [About("Whether object menus are also shown on the HUD of the person who uses the bot (on / off / \"\" = ask)")]
++        [ReturnHints("on or off")]
++        [ArgHints("state", "on, off or nothing to ask", "Text", "")]
++        [CmdTypeDo()]
++        public object CompanionMenusToHud(string state)
++        {
++            string a = (state ?? "").Trim().ToLowerInvariant();
++            if (a == "on" || a == "off") CompanionMenuStore.SetToHud(a == "on");
++            return BasicReply(CompanionMenuStore.ToHudOn ? "on" : "off", [state]);
++        }
++
++        [About("Answers a menu (button), a text box (the text) or a permission question (yes / no); !!close!! ignores it")]
++        [ReturnHints("answered")]
++        [ArgHints("id", "the menu's number from CompanionMenus", "Number")]
++        [ArgHints("answer", "the button, the text, yes / no, or !!close!! (= ignore, nothing is sent)", "Text")]
++        [CmdTypeDo()]
++        public object CompanionMenuAnswer(string id, string answer)
++        {
++            if (!long.TryParse(id, out long n)) return Failure("which menu?", [id]);
++            string r = CompanionMenuStore.Answer(GetClient(), n, answer ?? "");
++            return r.StartsWith("!") ? Failure(r[1..], [id]) : BasicReply(r, [id]);
++        }
++    }
++
++    /// <summary>AvieBoter patch: keeps what objects ask the bot (dialogs, text boxes, permissions, links) until the
++    /// app answers it or it is 10 minutes old.</summary>
++    public static class CompanionMenuStore
++    {
++        class Entry
++        {
++            public long id { get; set; }
++            public long t { get; set; }
++            public string kind { get; set; }
++            public string @object { get; set; }
++            public string objectId { get; set; }
++            public string owner { get; set; }
++            public string message { get; set; }
++            public List<string> buttons { get; set; }
++            public List<string> perms { get; set; }
++            public string url { get; set; }
++            public bool debit { get; set; }
++            internal int channel;
++            internal UUID objId, itemId;
++            internal Simulator sim;
++            internal ScriptPermission asked;
++        }
++
++        static readonly object gate = new();
++        static readonly List<Entry> items = new();
++        static long next = 0;
++        static GridClient attached;
++
++        public static void Attach(GridClient c)
++        {
++            lock (gate)
++            {
++                if (ReferenceEquals(attached, c)) return;
++                if (attached != null)
++                {
++                    attached.Self.ScriptDialog -= OnDialog;
++                    attached.Self.ScriptQuestion -= OnQuestion;
++                    attached.Self.LoadURL -= OnUrl;
++                }
++                attached = c;
++                items.Clear();
++                c.Self.ScriptDialog += OnDialog;
++                c.Self.ScriptQuestion += OnQuestion;
++                c.Self.LoadURL += OnUrl;
++            }
++        }
++
++        static void Add(Entry e)
++        {
++            lock (gate)
++            {
++                e.id = ++next;
++                e.t = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
++                // a new menu from the same object on the same channel replaces the older one, as in a viewer
++                if (e.kind is "menu" or "text") items.RemoveAll(x => x.objId == e.objId && x.channel == e.channel && x.kind is "menu" or "text");
++                items.Add(e);
++                if (items.Count > 30) items.RemoveAt(0);
++            }
++            ToHud(e);
++        }
++
++        // ---- the same menus on the HUD of the person who uses the bot (as a blue menu there, answered back by IM) ----
++        const string HudOffFile = "menus-hud-off.txt";
++        public static bool ToHudOn = !System.IO.File.Exists(HudOffFile);
++        static readonly System.Net.Http.HttpClient http = new() { Timeout = TimeSpan.FromSeconds(20) };
++
++        public static void SetToHud(bool on)
++        {
++            ToHudOn = on;
++            try { if (on) System.IO.File.Delete(HudOffFile); else System.IO.File.WriteAllText(HudOffFile, "off"); } catch { }
++        }
++
++        /// <summary>The HUD address of whoever used the bot last (else the HUD seen most recently, at most 2 days ago).</summary>
++        static string HudUrl()
++        {
++            if (CompanionAccess.LastCaller != UUID.Zero && CompanionAccess.HudUrls.TryGetValue(CompanionAccess.LastCaller, out var me)) return me.url;
++            var best = CompanionAccess.HudUrls.Values.OrderByDescending(v => v.seen).FirstOrDefault();
++            return best.url != null && DateTime.Now - best.seen < TimeSpan.FromDays(2) ? best.url : null;
++        }
++
++        static string Cut(string t, int n) => t == null ? "" : t.Length <= n ? t : t[..n] + "…";
++
++        static void ToHud(Entry e)
++        {
++            if (!ToHudOn || attached == null) return;
++            string url = HudUrl();
++            if (string.IsNullOrEmpty(url)) return;
++            // an LSL script gets at most 2048 bytes of a request: keep it short
++            string json = JsonSerializer.Serialize(new
++            {
++                bot = attached.Self.AgentID.ToString(), id = e.id,
++                k = e.kind == "permission" ? "perm" : e.kind,
++                o = Cut(e.@object, 40),
++                m = e.kind == "permission" ? Cut(string.Join(", ", e.perms ?? []), 300) + (e.debit ? " - and to take Linden dollars!" : "") : Cut(e.message, 350),
++                b = (e.buttons ?? []).Select(x => Cut(x, 24)).ToList(),
++                u = e.kind == "url" ? Cut(e.url, 255) : null
++            }, JsonOptions.UnsafeRelaxed);
++            try
++            {
++                var content = new System.Net.Http.StringContent("c|CompanionMenu\n" + json, System.Text.Encoding.UTF8, "text/plain");
++                _ = http.PostAsync(url, content).ContinueWith(t => { if (t.IsFaulted) LogFormater.Info("[Companion] menu to the HUD: no answer"); });
++            }
++            catch { }
++        }
++
++        static void OnDialog(object s, ScriptDialogEventArgs e)
++        {
++            bool text = e.ButtonLabels.Count == 1 && e.ButtonLabels[0] == "!!llTextBox!!";
++            string owner = (e.FirstName + " " + e.LastName).Trim();
++            if (e.OwnerID != UUID.Zero) CompanionNames.Note(e.OwnerID, owner);
++            Add(new Entry
++            {
++                kind = text ? "text" : "menu", @object = e.ObjectName ?? "", objectId = e.ObjectID.ToString(), owner = owner,
++                message = e.Message ?? "", buttons = text ? [] : e.ButtonLabels.ToList(), channel = e.Channel, objId = e.ObjectID
++            });
++        }
++
++        static void OnQuestion(object s, ScriptQuestionEventArgs e)
++        {
++            var names = Enum.GetValues<ScriptPermission>().Where(p => p != ScriptPermission.None && (e.Questions & p) != 0).Select(p => p.ToString()).ToList();
++            Add(new Entry
++            {
++                kind = "permission", @object = e.ObjectName ?? "", objectId = e.TaskID.ToString(), owner = e.ObjectOwnerName ?? "",
++                message = "", buttons = [], perms = names, debit = (e.Questions & ScriptPermission.Debit) != 0,
++                objId = e.TaskID, itemId = e.ItemID, sim = e.Simulator, asked = e.Questions
++            });
++        }
++
++        static void OnUrl(object s, LoadUrlEventArgs e)
++        {
++            Add(new Entry
++            {
++                kind = "url", @object = e.ObjectName ?? "", objectId = e.ObjectID.ToString(),
++                owner = e.OwnerIsGroup ? "(group)" : CompanionNames.Get(attached, e.OwnerID), message = e.Message ?? "",
++                buttons = [], url = e.URL ?? "", objId = e.ObjectID
++            });
++        }
++
++        public static string List()
++        {
++            lock (gate)
++            {
++                long old = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 10 * 60 * 1000;
++                items.RemoveAll(x => x.t < old);
++                return JsonSerializer.Serialize(items, JsonOptions.UnsafeRelaxed);
++            }
++        }
++
++        public static string Answer(GridClient c, long id, string answer)
++        {
++            Entry e;
++            lock (gate)
++            {
++                e = items.FirstOrDefault(x => x.id == id);
++                if (e == null) return "!that menu is gone (answered or too old)";
++                items.Remove(e);
++            }
++            if (answer == "!!close!!") return "closed";      // ignored, as a viewer's Ignore button: nothing is sent
++            string a = answer.Trim();
++            switch (e.kind)
++            {
++                case "menu":
++                    {
++                        int i = e.buttons.IndexOf(answer);
++                        if (i < 0) return "!no such button";
++                        c.Self.ReplyToScriptDialog(e.channel, i, answer, e.objId);
++                        return "chose " + answer;
++                    }
++                case "text":
++                    c.Self.ReplyToScriptDialog(e.channel, 0, answer, e.objId);
++                    return "sent";
++                case "permission":
++                    {
++                        bool yes = a.Equals("yes", StringComparison.OrdinalIgnoreCase);
++                        c.Self.ScriptQuestionReply(e.sim ?? c.Network.CurrentSim, e.itemId, e.objId, yes ? e.asked : ScriptPermission.None);
++                        return yes ? "allowed" : "refused";
++                    }
++            }
++            return "closed";
 +        }
 +    }
 +}
@@ -2677,7 +4480,7 @@ index b88920b..707fdba 100644
                  EventsSecondBot worker = new(args);
  
 diff --git a/SecondBotEvents/Services/BotClientService.cs b/SecondBotEvents/Services/BotClientService.cs
-index c0be957..acd252d 100644
+index c0be957..7d9af2d 100644
 --- a/SecondBotEvents/Services/BotClientService.cs
 +++ b/SecondBotEvents/Services/BotClientService.cs
 @@ -1,4 +1,4 @@
@@ -2686,7 +4489,18 @@ index c0be957..acd252d 100644
  using OpenMetaverse.Assets;
  using SecondBotEvents.Config;
  using System;
-@@ -120,7 +120,9 @@ namespace SecondBotEvents.Services
+@@ -108,7 +108,9 @@ namespace SecondBotEvents.Services
+ 
+         protected void BotDisconnected(object o, DisconnectedEventArgs e)
+         {
+-            LogFormater.Info("Client service ~ Network disconnected: " + e.Message);
++            // AvieBoter patch: the reason tells the app whether the connection was lost (NetworkTimeout, ServerInitiated,
++            // SimShutdown) or the bot logged out on purpose (ClientInitiated)
++            LogFormater.Info("Client service ~ Network disconnected (" + e.Reason + "): " + e.Message);
+         }
+ 
+         protected void BotLoginStatus(object o, LoginProgressEventArgs e)
+@@ -120,7 +122,9 @@ namespace SecondBotEvents.Services
                  ResetClient();
                  return;
              }
@@ -2697,7 +4511,7 @@ index c0be957..acd252d 100644
          }
          public void SendIM(UUID avatar, string message)
          {
-@@ -197,6 +199,10 @@ namespace SecondBotEvents.Services
+@@ -197,6 +201,10 @@ namespace SecondBotEvents.Services
          {
              client = null;
              client = new GridClient();
@@ -2708,6 +4522,16 @@ index c0be957..acd252d 100644
              client.Network.SimConnected += BotSimConnected;
              client.Network.LoggedOut += BotLoggedOut;
              client.Network.Disconnected += BotDisconnected;
+@@ -221,6 +229,9 @@ namespace SecondBotEvents.Services
+             {
+                 loginParams.URI = basicCfg.GetLoginURI();
+             }
++            // AvieBoter patch: where the bot logs in - "last", "home" or "uri:Region&x&y&z"
++            string start = Environment.GetEnvironmentVariable("SLBM_START");
++            if (!string.IsNullOrEmpty(start)) loginParams.Start = start;
+             AutoRestartLoginTimer.Start();
+             client.Network.BeginLogin(loginParams);
+         }
 diff --git a/SecondBotEvents/Services/CommandsService.cs b/SecondBotEvents/Services/CommandsService.cs
 index a9d77f9..9ecb491 100644
 --- a/SecondBotEvents/Services/CommandsService.cs
@@ -2831,16 +4655,58 @@ index 60b291a..c38602b 100644
  
          protected string JsonInput(IHttpContext httpContext)
 diff --git a/SecondBotEvents/Services/InteractionService.cs b/SecondBotEvents/Services/InteractionService.cs
-index a4ae5c0..c8cb46b 100644
+index a4ae5c0..6f76ca1 100644
 --- a/SecondBotEvents/Services/InteractionService.cs
 +++ b/SecondBotEvents/Services/InteractionService.cs
-@@ -319,11 +319,14 @@ namespace SecondBotEvents.Services
+@@ -245,12 +245,12 @@ namespace SecondBotEvents.Services
+ 
+         protected void BotInventoryAdd(object o, InventoryObjectAddedEventArgs e)
+         {
+-            InventoryItem F = (InventoryItem)e.Obj;
++            // AvieBoter patch: a new folder is no item – the cast threw inside CreateFolder, so no folder was ever made
+             Dictionary<string, string> details = new()
+             {
+                 { "itemname", e.Obj.Name },
+                 { "itemuuid", e.Obj.UUID.ToString() },
+-                { "itemtype", F.AssetType.ToString()    },
++                { "itemtype", e.Obj is InventoryItem F ? F.AssetType.ToString() : "Folder" },
+             };
+             if (master.EventsService.isRunning() == true)
+             {
+@@ -319,11 +319,41 @@ namespace SecondBotEvents.Services
  
          protected async void BotLoggedIn(object o, SimConnectedEventArgs e)
          {
 +            SecondBotEvents.Commands.CompanionGroupInvitations.Hook(GetClient());     // AvieBoter: before offline IMs arrive
              await awaitstable();
              GetClient().Network.SimConnected -= BotLoggedIn;
++            // AvieBoter 1.7.9: soon after login the bot makes sure it has its camera anchor in inventory (made where it may
++            // build; if it may not, it tries again in the next region it comes to)
++            var masterRef = master;
++            var cl = GetClient();
++            _ = Task.Run(async () =>
++            {
++                await Task.Delay(25000);
++                string how = "";
++                try { var it = new SecondBotEvents.Commands.CompanionBuild(masterRef).AnchorItemReady(out how); LogFormater.Info("[Companion] camera anchor at login: " + how); if (it) return; }
++                catch (Exception ex) { LogFormater.Warn("[Companion] camera anchor at login: " + ex.Message); }
++                EventHandler<SimChangedEventArgs> retry = null;
++                retry = (s, e) =>
++                {
++                    _ = Task.Run(async () =>
++                    {
++                        await Task.Delay(15000);
++                        try
++                        {
++                            bool ok = new SecondBotEvents.Commands.CompanionBuild(masterRef).AnchorItemReady(out string h);
++                            LogFormater.Info("[Companion] camera anchor: " + h);
++                            if (ok) cl.Network.SimChanged -= retry;
++                        }
++                        catch { }
++                    });
++                };
++                cl.Network.SimChanged += retry;
++            });
              GetClient().Friends.FriendshipOffered += BotFriendRequested;
              GetClient().Inventory.InventoryObjectOffered += BotInventoryOffer;
 -            GetClient().Groups.GroupInvitation += BotGroupInviteOffer;
@@ -2851,7 +4717,7 @@ index a4ae5c0..c8cb46b 100644
              GetClient().Self.IM += BotTeleportOffer;
              botConnected = true;
 diff --git a/SecondBotEvents/Static/http_commands_helper.cs b/SecondBotEvents/Static/http_commands_helper.cs
-index 3a257d5..0454aee 100644
+index 3a257d5..254967c 100644
 --- a/SecondBotEvents/Static/http_commands_helper.cs
 +++ b/SecondBotEvents/Static/http_commands_helper.cs
 @@ -1,4 +1,4 @@
@@ -2860,7 +4726,7 @@ index 3a257d5..0454aee 100644
  using System;
  using System.Collections.Generic;
  using System.Text;
-@@ -14,6 +14,10 @@ namespace SecondBotEvents
+@@ -14,6 +14,13 @@ namespace SecondBotEvents
                  { "animation", typeof(AnimationCommands) },
                  { "avatars", typeof(Avatars) },
                  { "chat", typeof(Chat) },
@@ -2868,6 +4734,9 @@ index 3a257d5..0454aee 100644
 +                { "companionbuild", typeof(SecondBotEvents.Commands.CompanionBuild) },
 +                { "companionpeople", typeof(SecondBotEvents.Commands.CompanionPeople) },
 +                { "companiongroups", typeof(SecondBotEvents.Commands.CompanionGroups) },
++                { "companionpuppet", typeof(SecondBotEvents.Commands.CompanionPuppet) },
++                { "companioninventory", typeof(SecondBotEvents.Commands.CompanionInventory) },
++                { "companionworld", typeof(SecondBotEvents.Commands.CompanionWorld) },
                  { "core", typeof(Core) },
                  { "dialogs", typeof(Dialogs) },
                  { "discord", typeof(DiscordCommands) },
