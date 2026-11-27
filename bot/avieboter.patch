@@ -3832,10 +3832,10 @@ index 0000000..ca59808
 +}
 diff --git a/SecondBotEvents/Commands/CompanionWorld.cs b/SecondBotEvents/Commands/CompanionWorld.cs
 new file mode 100644
-index 0000000..159a440
+index 0000000..f0338e2
 --- /dev/null
 +++ b/SecondBotEvents/Commands/CompanionWorld.cs
-@@ -0,0 +1,559 @@
+@@ -0,0 +1,659 @@
 +// AvieBoter patch: the bot and the world around it, for the app - objects nearby (touch, sit, go to, take, take a
 +// copy, wear, delete, return, look inside, info) and the menus, text boxes, permission questions and links that
 +// objects send the bot (llDialog, llTextBox, llRequestPermissions, llLoadURL), answered from the app.
@@ -3870,10 +3870,14 @@ index 0000000..159a440
 +            foreach (var chunk in ids.Chunk(100)) c.Objects.DeselectObjects(sim, chunk);
 +        }
 +
++        /// <summary>An object by its local id, or by its key (UUID) – then also a single prim of a linked object, as when
++        /// you touch one button of it in a viewer. Only objects the region has sent the bot can be found.</summary>
 +        Primitive Root(Simulator sim, string localId)
 +        {
-+            if (sim == null || !uint.TryParse(localId, out uint id)) return null;
-+            return sim.ObjectsPrimitives.TryGetValue(id, out Primitive p) ? p : null;
++            if (sim == null) return null;
++            if (uint.TryParse(localId, out uint id)) return sim.ObjectsPrimitives.TryGetValue(id, out Primitive p) ? p : null;
++            if (UUID.TryParse((localId ?? "").Trim(), out UUID u) && u != UUID.Zero) return sim.ObjectsPrimitives.Values.FirstOrDefault(x => x.ID == u);
++            return null;
 +        }
 +
 +        object Obj(GridClient c, Primitive p, Vector3 me)
@@ -3966,7 +3970,7 @@ index 0000000..159a440
 +        [About("Does something with an object near the bot: touch, sit, stand, go, take, copy, wear, delete, return, info, contents")]
 +        [ReturnHints("what was done (info and contents: json)")]
 +        [ArgHints("action", "touch, sit, stand, go (walk next to it), take (own: into inventory), copy (a copy into inventory), wear (own), delete (own or modifiable: to the Trash), return (to its owner), info, contents, rename, describe", "Text")]
-+        [ArgHints("localId", "the object's local id (from CompanionNearby)", "Number")]
++        [ArgHints("localId", "the object's local id (from CompanionNearby) or its key (UUID)", "Text")]
 +        [ArgHints("arg", "rename: the new name; describe: the new description; else none", "Text", "none")]
 +        [CmdTypeDo()]
 +        public object CompanionObjectDo(string action, string localId, string arg)
@@ -3982,7 +3986,7 @@ index 0000000..159a440
 +                return box == null ? Failure(why, [action]) : BasicReply("a new box is in front of the bot", [action]);
 +            }
 +            var p = Root(sim, localId);
-+            if (p == null) return Failure("the object is not there any more – refresh", [action, localId]);
++            if (p == null) return Failure(Guid.TryParse(localId ?? "", out _) ? "the bot does not see an object with that key (it must be in its region, within about 64 m – or further after a whole-region Nearby)" : "the object is not there any more – refresh", [action, localId]);
 +            var one = new List<Primitive> { p };
 +            Props(sim, one, 3000);
 +            string name = p.Properties?.Name ?? "the object";
@@ -4200,6 +4204,51 @@ index 0000000..159a440
 +            return BasicReply(CompanionMenuStore.ToHudOn ? "on" : "off", [state]);
 +        }
 +
++        [About("Whether objects may animate the bot without asking (on / off / ask = tell). Objects the user allowed once get the same again for two hours either way.")]
++        [ReturnHints("on or off")]
++        [ArgHints("state", "on, off or ask", "Text", "ask")]
++        [CmdTypeDo()]
++        public object CompanionAutoAnim(string state)
++        {
++            string a = (state ?? "").Trim().ToLowerInvariant();
++            if (a == "on" || a == "off") CompanionMenuStore.SetAutoAnim(a == "on");
++            return BasicReply(CompanionMenuStore.AutoAnim ? "on" : "off", [state]);
++        }
++
++        [About("The animations the bot plays now (names for the built-in ones, else keys) – to check what objects play on it")]
++        [ReturnHints("json [{id, name}]")]
++        [CmdTypeGet()]
++        public object CompanionAnims()
++        {
++            var names = typeof(Animations).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
++                .Where(f => f.FieldType == typeof(UUID)).GroupBy(f => (UUID)f.GetValue(null)).ToDictionary(g => g.Key, g => g.First().Name.ToLowerInvariant());
++            var list = GetClient().Self.SignaledAnimations.Copy().Keys.Select(k => new { id = k.ToString(), name = names.TryGetValue(k, out var n) ? n : "" }).ToList();
++            return BasicReply(J(list));
++        }
++
++        [About("Touchable objects within 20 m of the bot for the HUD's Touch menu: one line each, local id|metres|name, nearest first (at most 18)")]
++        [ReturnHints("text lines lid|m|name, or nothing found")]
++        [CmdTypeGet()]
++        public object CompanionTouchList()
++        {
++            var c = GetClient();
++            var sim = c.Network.CurrentSim;
++            if (sim == null) return Failure("not in a region");
++            Vector3 me = c.Self.SimPosition;
++            var list = sim.ObjectsPrimitives.Values.Where(p => p.ParentID == 0 && !p.IsAttachment && (p.Flags & PrimFlags.Touch) != 0 && Vector3.Distance(me, p.Position) <= 20)
++                .OrderBy(p => Vector3.Distance(me, p.Position)).Take(18).ToList();
++            Props(sim, list, 3000);
++            if (list.Count == 0) return BasicReply("nothing to touch within 20 m");
++            // a HUD button holds 24 bytes and a HUD gets at most 2 KB: short plain names
++            static string Short(string n)
++            {
++                var t = new string((n ?? "").Where(ch => ch >= ' ' && ch < 127 && ch != '|').ToArray()).Trim();
++                if (t == "") t = "Object";
++                return t.Length > 19 ? t[..19] : t;
++            }
++            return BasicReply(string.Join("\n", list.Select(p => p.LocalID + "|" + Math.Round(Vector3.Distance(me, p.Position)) + "|" + Short(p.Properties?.Name))));
++        }
++
 +        [About("Answers a menu (button), a text box (the text) or a permission question (yes / no); !!close!! ignores it")]
 +        [ReturnHints("answered")]
 +        [ArgHints("id", "the menu's number from CompanionMenus", "Number")]
@@ -4330,8 +4379,30 @@ index 0000000..159a440
 +            });
 +        }
 +
++        // ---- permission questions answered without asking ----
++        // Animation sequences (dance balls, couples' animations, poses) often ask again for every animation; a viewer's
++        // user clicks each time, but a bot would stall after the first one. So: asking only to animate the bot is
++        // allowed at once (switch: CompanionAutoAnim), and an object the user already allowed gets the same again.
++        const string AnimAskFile = "anims-ask.txt";
++        public static bool AutoAnim = !System.IO.File.Exists(AnimAskFile);
++        public static void SetAutoAnim(bool on)
++        {
++            AutoAnim = on;
++            try { if (on) System.IO.File.Delete(AnimAskFile); else System.IO.File.WriteAllText(AnimAskFile, "ask"); } catch { }
++        }
++        static readonly System.Collections.Concurrent.ConcurrentDictionary<UUID, (ScriptPermission perms, DateTime until)> allowedBefore = new();
++
 +        static void OnQuestion(object s, ScriptQuestionEventArgs e)
 +        {
++            bool animOnly = e.Questions == ScriptPermission.TriggerAnimation;
++            bool again = allowedBefore.TryGetValue(e.TaskID, out var was) && DateTime.Now < was.until && (e.Questions & ~was.perms) == 0;
++            if ((AutoAnim && animOnly) || again)
++            {
++                attached?.Self.ScriptQuestionReply(e.Simulator, e.ItemID, e.TaskID, e.Questions);
++                allowedBefore[e.TaskID] = (e.Questions | (again ? was.perms : 0), DateTime.Now.AddHours(2));
++                LogFormater.Info("[Companion] allowed '" + e.ObjectName + "' " + e.Questions + (again ? " (allowed before)" : " (animations are allowed without asking)"));
++                return;
++            }
 +            var names = Enum.GetValues<ScriptPermission>().Where(p => p != ScriptPermission.None && (e.Questions & p) != 0).Select(p => p.ToString()).ToList();
 +            Add(new Entry
 +            {
@@ -4361,6 +4432,26 @@ index 0000000..159a440
 +            }
 +        }
 +
++        // "!!b<n>" = the n-th button (the app and HUD 1.7.6 send that: labels like "• Dance All • |||120" hold "|||",
++        // which a command cannot carry); else the label, also when spaces, bullets or "|||" got lost on the way
++        static int Button(Entry e, string answer)
++        {
++            var m = System.Text.RegularExpressions.Regex.Match(answer ?? "", @"^!!b(\d+)$");
++            if (m.Success) { int n = int.Parse(m.Groups[1].Value); return n < e.buttons.Count ? n : -1; }
++            int i = e.buttons.IndexOf(answer);
++            if (i >= 0) return i;
++            string a = Norm(answer);
++            if (a == "") return -1;
++            i = e.buttons.FindIndex(b => Norm(b) == a);
++            if (i >= 0) return i;
++            string an = Alnum(answer);
++            if (an != "") { i = e.buttons.FindIndex(b => Alnum(b) == an); if (i >= 0) return i; }
++            return e.buttons.FindIndex(b => Norm(b).StartsWith(a, StringComparison.Ordinal));     // a label the HUD shortened
++        }
++        static string Alnum(string x) => System.Text.RegularExpressions.Regex.Replace(x ?? "", @"[^\p{L}\p{N}]", "").ToLowerInvariant();
++
++        static string Norm(string x) => System.Text.RegularExpressions.Regex.Replace(x ?? "", @"\s+", " ").Trim().TrimEnd('…');
++
 +        public static string Answer(GridClient c, long id, string answer)
 +        {
 +            Entry e;
@@ -4368,6 +4459,12 @@ index 0000000..159a440
 +            {
 +                e = items.FirstOrDefault(x => x.id == id);
 +                if (e == null) return "!that menu is gone (answered or too old)";
++                // a menu button: find it before the menu is taken away (a wrong answer must not lose the menu)
++                if (e.kind == "menu" && answer != "!!close!!" && Button(e, answer) < 0)
++                {
++                    LogFormater.Info("[Companion] menu of '" + e.@object + "': no button '" + answer + "'");
++                    return "!no such button";
++                }
 +                items.Remove(e);
 +            }
 +            if (answer == "!!close!!") return "closed";      // ignored, as a viewer's Ignore button: nothing is sent
@@ -4376,10 +4473,12 @@ index 0000000..159a440
 +            {
 +                case "menu":
 +                    {
-+                        int i = e.buttons.IndexOf(answer);
-+                        if (i < 0) return "!no such button";
-+                        c.Self.ReplyToScriptDialog(e.channel, i, answer, e.objId);
-+                        return "chose " + answer;
++                        // the exact label goes back (dance balls pad labels with spaces and codes, e.g. " Dance All   122";
++                        // a HUD or a command may have lost the padding)
++                        int i = Button(e, answer);
++                        c.Self.ReplyToScriptDialog(e.channel, i, e.buttons[i], e.objId);
++                        LogFormater.Info("[Companion] menu of '" + e.@object + "': chose '" + e.buttons[i] + "'");
++                        return "chose " + e.buttons[i].Trim();
 +                    }
 +                case "text":
 +                    c.Self.ReplyToScriptDialog(e.channel, 0, answer, e.objId);
@@ -4388,6 +4487,7 @@ index 0000000..159a440
 +                    {
 +                        bool yes = a.Equals("yes", StringComparison.OrdinalIgnoreCase);
 +                        c.Self.ScriptQuestionReply(e.sim ?? c.Network.CurrentSim, e.itemId, e.objId, yes ? e.asked : ScriptPermission.None);
++                        if (yes) allowedBefore[e.objId] = (e.asked, DateTime.Now.AddHours(2));     // the same object asks again: no new question
 +                        return yes ? "allowed" : "refused";
 +                    }
 +            }

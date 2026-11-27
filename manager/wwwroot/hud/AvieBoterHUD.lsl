@@ -6,7 +6,7 @@
 // then paste the pairing line from AvieBoter into local chat:  /7 pair SLB1|<bot key>|<secret>|<bot name>
 // Commands go to the bot as signed instant messages; answers come back to this HUD's own web address.
 
-string  VERSION = "1.7.2";
+string  VERSION = "1.7.6";
 integer PAIR_CHANNEL = 7;
 integer UPDATE_PIN = 7710422;     // must match the updater script
 integer helloSent = FALSE;
@@ -146,6 +146,8 @@ doAction(string a, list p)
     else if (a == "quietstatus") { quietStatus = TRUE; send("CompanionStatus", []); }
     else if (a == "checkupdate") { checkBot = (integer)llList2String(p, 0); helloTo(checkBot, "CompanionHudCheck"); }
     else if (a == "fly") send("CompanionFly", [llList2String(p, 0), replyTarget()]);
+    else if (a == "touchlist") send("CompanionTouchList", []);
+    else if (a == "touch") send("CompanionObjectDo", ["touch", llList2String(p, 0), "none"]);
     else if (a == "lure") { llOwnerSay(botLabel() + " sends you a teleport offer…"); send("CompanionTeleportMe", []); }
     else if (a == "gohome") { llOwnerSay(botLabel() + " is teleporting to its home location."); send("GoHome", []); showText("going home"); }
     else if (a == "logoff") { llOwnerSay("Logging " + botLabel() + " out."); showText("logging out"); send("Logoff", []); }
@@ -288,6 +290,7 @@ handleReply(string command, string reply)
     string cmd = llJsonGetValue(reply, ["command"]);
     if (cmd == JSON_INVALID) cmd = command;
     if (cmd == "CompanionImHere") return;
+    if (cmd == "CompanionTouchList") { ui("ring", ""); llMessageLinked(LINK_THIS, 0, "slbm-touchlist", llJsonGetValue(reply, ["reply"])); return; }
     if (cmd == "CompanionMenu") { llMessageLinked(LINK_THIS, 0, "slbm-objmenu", reply); return; }    // an object's menu for the bot
     if (cmd == "CompanionCam") { llMessageLinked(LINK_THIS, 0, "slbm-cam|" + llJsonGetValue(reply, ["result"]), ""); return; }   // the Puppeteer's Cam
     if (cmd == "CompanionHudCheck")     // the app looks on GitHub first; an older bot does not know this: plain hello

@@ -10,7 +10,7 @@
     <AssemblyName>AvieBoter</AssemblyName>
     <StartupObject>AvieBoter.Program</StartupObject>
     <ApplicationIcon>Assets\AvieBoter.ico</ApplicationIcon>
-    <Version>1.12.0</Version>
+    <Version>1.12.4</Version>
     <Product>AvieBoter</Product>
     <Copyright>GPL-3.0-or-later</Copyright>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

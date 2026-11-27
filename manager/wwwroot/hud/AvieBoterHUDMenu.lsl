@@ -14,8 +14,7 @@ string  line2 = "";
 string  pendingAction = "";
 integer following = FALSE;
 float   adjustStep = 0.05;           // metres per Adjust press
-float   hoverStep = 0.02;            // metres per Hover press
-string  hoverNow = "";               // the last height the bot reported
+float   mainAt = -100.0;             // when the main menu was shown (a fresher status shows it again)
 list    ACCENTS = ["Cyan", <0.25, 0.85, 1.0>, "Violet", <0.65, 0.45, 1.0>, "Green", <0.35, 1.0, 0.55>, "Amber", <1.0, 0.75, 0.25>,
                    "Pink", <1.0, 0.45, 0.75>, "White", <0.92, 0.95, 1.0>, "Red", <1.0, 0.35, 0.3>, "Blue", <0.3, 0.5, 1.0>];
 
@@ -251,10 +250,11 @@ mainMenu()
         dialog("main", "\nAvieBoter HUD\n\nNo bot is paired yet.\nIn AvieBoter open your bot, tab HUD: press \"Send me a new HUD\" (it comes paired), or copy the pairing line and paste it into local chat.", ["Help", "Settings ▸", "Close"]);
         return;
     }
+    mainAt = llGetTime();
     dialog("main", "\nBot: " + botLabel() + "\nLast status: " + lastStatus + "\n\nWhat should the bot do?",
         ["Bot ▸", "More ▸", "Settings ▸",
          "Teleport me", poseButton(), "Adjust ▸",
-         "Sit on…", "Outfit…", "Go home",
+         "Sit on…", "Touch…", "Go home",
          "Sit with me", "Come to me", "Follow ▸"]);
 }
 
@@ -318,18 +318,9 @@ followMenu()
 
 moreMenu()
 {
-    dialog("more", "\nMore for " + botLabel() + ":\n\nHover ▸: lift or lower the bot.   Cam ▸: your camera watches the way the bot faces.   Status: what the bot is doing and where.", ["◀ Menu", "Set home…", "Log off…", "Hover ▸", "Status", "Cam ▸"]);
+    dialog("more", "\nMore for " + botLabel() + ":\n\nHover ▸: lift or lower the bot.   Cam ▸: your camera watches the way the bot faces.   Status: what the bot is doing and where.   Outfit…: a folder to wear.", ["◀ Menu", "Set home…", "Log off…", "Hover ▸", "Status", "Cam ▸", "Outfit…"]);
 }
 
-hoverMenu()
-{
-    string cm = (string)llRound(hoverStep * 100.0);
-    string now = hoverNow;
-    if (now == "") now = "not reported yet – press Up or Down";
-    dialog("hover", "\nHover height of " + botLabel() + " – step " + cm + " cm.\nNow: " + now + "\n\nUp / Down lift or lower the bot, standing or sitting. Reset goes back to the height set in AvieBoter, which is also where the bot starts after logging in again.",
-        ["◀ More", "Reset", "Step " + cm + " cm",
-         "Down ▼", "Up ▲"]);
-}
 
 integer verNum(string v)      // "1.2.3" -> 1002003, to compare versions
 {
@@ -364,11 +355,9 @@ confirm(string action, string question)
 
 help()
 {
-    llOwnerSay("AvieBoter HUD: Sit with me – sit on a vehicle first. Come to me / Teleport me – the bot comes, or offers you a teleport. "
-        + "Stand / Fly ON / Fly OFF follows the bot. Follow ▸ – it follows you. Adjust ▸ – move it on its seat. Sit on… – an object's key. "
-        + "Outfit… – a folder name. More ▸ – Hover, Set home, Log off, Status. Bot ▸ – switch bots. "
-        + "Settings ▸ – size, ring colour, text, Update HUD. Ring: your colour = ready, amber = working, red = failed. "
-        + "More help: AvieBoter → Help.");
+    llOwnerSay("AvieBoter HUD: Sit with me (sit on a vehicle first), Come to me, Teleport me, Fly ON/OFF, Follow ▸, Adjust ▸ (on its seat), "
+        + "Sit on… (an object's key), Touch… (things near the bot), More ▸ (Hover, Cam, Status, Outfit…, Set home, Log off), Bot ▸ (switch bots), "
+        + "Settings ▸ (size, colour, text, Update HUD). Ring: your colour = ready, amber = working, red = failed. More help: AvieBoter → Help.");
 }
 
 default
@@ -397,8 +386,14 @@ default
         if (str == "slbm-ui|ring") ringState((string)id);
         else if (str == "slbm-ui|text") { line2 = (string)id; showText(); }
         else if (str == "slbm-ui|status") lastStatus = (string)id;
-        else if (str == "slbm-ui|pose") pose = (integer)((string)id);
-        else if (str == "slbm-ui|hover") { hoverNow = (string)id; if (menu == "hover") hoverMenu(); }   // show the new height
+        else if (str == "slbm-ui|pose")
+        {
+            integer np = (integer)((string)id);
+            // the bot's real state came after the menu was shown (just touched, or another bot chosen): show it again
+            if (np != pose && menu == "main" && llGetTime() - mainAt < 10.0) { pose = np; mainMenu(); }
+            pose = np;
+        }
+        else if (str == "slbm-ui|main") mainMenu();       // back from the Touch… menu (in the camera script)
         else if (str == "slbm-ui|more") moreMenu();       // back from the camera menu
     }
 
@@ -450,6 +445,7 @@ default
                 if (msg == llGetSubString(label, 0, 16) || msg == llGetSubString("● " + label, 0, 16))
                 {
                     act("select", [(string)i]);
+                    act("quietstatus", []);     // the chosen bot's own Stand / Fly ON / Fly OFF (the menu comes again with it)
                     lastStatus = "not asked yet";
                     line2 = "";
                     showText();
@@ -457,22 +453,6 @@ default
                     return;
                 }
             }
-            return;
-        }
-        if (menu == "hover")
-        {
-            if (msg == "◀ More") { moreMenu(); return; }
-            if (llGetSubString(msg, 0, 4) == "Step ")
-            {
-                list steps = [0.01, 0.02, 0.05, 0.10];
-                integer i = llListFindList(steps, [hoverStep]) + 1;
-                if (i >= llGetListLength(steps)) i = 0;
-                hoverStep = llList2Float(steps, i);
-            }
-            else if (msg == "Up ▲") act("adjust", ["up", (string)hoverStep]);
-            else if (msg == "Down ▼") act("adjust", ["down", (string)hoverStep]);
-            else if (msg == "Reset") act("adjust", ["reset", (string)hoverStep]);
-            hoverMenu();
             return;
         }
         if (menu == "adjust")
@@ -517,7 +497,7 @@ default
         if (menu == "more")
         {
             if (msg == "◀ Menu") { mainMenu(); return; }
-            if (msg == "Hover ▸") { hoverMenu(); return; }
+            if (msg == "Hover ▸") { llMessageLinked(LINK_THIS, 0, "slbm-hover", ""); return; }     // in the camera script (room)
             if (msg == "Cam ▸")
             {
                 if (llGetInventoryType("SL Bot HUD cam") == INVENTORY_SCRIPT) llMessageLinked(LINK_THIS, 0, "slbm-cam|menu", "");
@@ -525,6 +505,7 @@ default
                 return;
             }
             if (msg == "Status") { act("status", []); return; }
+            if (msg == "Outfit…") { textBox("outfit", "\nWhich outfit should " + botLabel() + " wear?\n\nType the folder name (a folder in the bot's My Outfits, or any folder in its inventory). The current outfit is replaced."); return; }
             if (msg == "Log off…") confirm("logoff", "Log " + botLabel() + " out of Second Life?");
             else if (msg == "Set home…") confirm("sethome", "Make the place where " + botLabel() + " stands now its home?\n(Second Life allows this only on land where the bot may set home.)");
             return;
@@ -599,7 +580,7 @@ default
         else if (msg == "Set home…") confirm("sethome", "Make the place where " + botLabel() + " stands now its home?\n(Second Life allows this only on land where the bot may set home.)");
         else if (msg == "Bot ▸") botMenu();
         else if (msg == "Sit on…") textBox("sitkey", "\nSit " + botLabel() + " on which object?\n\nPaste the object's key (UUID).\nIn your viewer: Edit the object → General → Copy Keys.");
-        else if (msg == "Outfit…") textBox("outfit", "\nWhich outfit should " + botLabel() + " wear?\n\nType the folder name (a folder in the bot's My Outfits, or any folder in its inventory). The current outfit is replaced.");
+        else if (msg == "Touch…") act("touchlist", []);
         else if (msg == "Adjust ▸") adjustMenu();
         else if (msg == "Follow ▸") followMenu();
         else if (msg == "More ▸") moreMenu();

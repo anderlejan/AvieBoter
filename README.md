@@ -17,7 +17,7 @@ a viewer and almost no CPU.
   on this PC. Passwords are stored encrypted for your Windows user (DPAPI) and passed only to the bot process.
 - **A HUD in Second Life:** the bot builds a HUD, gives it to you already paired, and keeps it up to date. From its
   menu the bot comes to you, sits with you on a vehicle, follows you, sends you a teleport offer, takes off or lands,
-  sits on saved seats, goes home, hovers higher or lower and more – from anywhere, with no ports opened on your PC.
+  sits on saved seats, touches things near it, goes home, hovers higher or lower and more – from anywhere, with no ports opened on your PC.
   A following bot walks, runs and flies with you, lands when you land and comes after you when you teleport. One HUD can control several bots; Update HUD adds them to the
   HUD you already wear, and Update HUD in the HUD's own settings fetches the newest HUD.
 - **Sharing:** friends you add to a bot get their own HUD and can use the bot at the same time.
@@ -31,7 +31,8 @@ a viewer and almost no CPU.
   them. Touch, sit, go to an object, read what it is, look inside; take, wear, rename, delete or return the bot's
   own things, take a copy where allowed, and rez a new box.
 - **Object menus:** the blue menus, text boxes, permission questions and links that objects send the bot appear in
-  the app – and, if you like, on your HUD – and are answered there.
+  the app – and, if you like, on your HUD – and are answered there. Objects that only want to animate the bot (dance
+  balls, animation sequences) need no answer.
 - **Inventory:** browse the bot's folders, what it wears and its Trash, and search everything. Wear, add, take off,
   give, rename, move and delete; rez objects in front of the bot, on the ground, in front of you or at a place;
   listen to sounds or play them in-world, play animations and gestures, look at pictures, teleport to landmarks.
@@ -55,7 +56,7 @@ a viewer and almost no CPU.
 **The HUD in Second Life** (illustration drawn from the HUD's script; names are fictional)
 
 ![The HUD and its main menu](docs/screenshots/hud-ingame.png)
-![Follow, Adjust, More, HUD settings, Cam and Hover menus, and an object's menu shown on the HUD](docs/screenshots/hud-menus.png)
+![Follow, Adjust, More, HUD settings, Cam and Touch menus, and an object's menu shown on the HUD](docs/screenshots/hud-menus.png)
 
 **The app**
 

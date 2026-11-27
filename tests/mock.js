@@ -3,7 +3,7 @@
   const listeners=[]; let bots=[]; window.__pushState=()=>listeners.forEach(f=>f({data:{type:'state',bots:JSON.parse(JSON.stringify(bots))}})); const settings={theme:'storm',fontPercent:100,startInTray:false,startBotsWithApp:true,closeAction:'tray',showNotesButton:true,notifyImPopup:true,notifyImSound:true,notifyLocalPopup:false,notifyLocalSound:false,recentSlurls:[],ui:{},lastBot:'',lastSection:'overview'};
   let notes={version:2,notes:[]};
   window.__calls=[];
-  window.__upd={current:'1.12.0',hud:'1.7.2',check:true,auto:true,lastCheck:null,status:'',available:null,botsOnline:false};
+  window.__upd={current:'1.12.4',hud:'1.7.6',check:true,auto:true,lastCheck:null,status:'',available:null,botsOnline:false};
   window.__pushUpdate = u => { window.__upd=u; listeners.forEach(f => f({data:{type:'update', update:u}})); };
   window.__pushOpen = (bot, section) => listeners.forEach(f => f({data:{type:'open', bot, section}}));
   function reply(id,ok,v,err){ setTimeout(()=>listeners.forEach(f=>f({data:{id,ok,v,err}})),5); }
@@ -11,7 +11,7 @@
     window.__calls.push(m.m);
     const a=m.a||[];
     switch(m.m){
-      case 'init': return reply(m.id,true,{version:'1.12.0',settings,bots,dataDir:'C:\\data',botExeFound:true,update:window.__upd,notesConfig:null});
+      case 'init': return reply(m.id,true,{version:'1.12.4',settings,bots,dataDir:'C:\\data',botExeFound:true,update:window.__upd,notesConfig:null});
       case 'update.check': window.__upd=Object.assign({},window.__upd,{available:{version:'1.5.0',page:'https://example.invalid/r'},lastCheck:new Date().toISOString()}); return reply(m.id,true,window.__upd);
       case 'hud.update': window.__hudUpd=a[0]; return reply(m.id,true,{way:'silent',person:a[0],bots:['Passenger'],through:'Passenger',answer:'added 1',neverOnline:[]});
       case 'update.install': window.__installed=true; return reply(m.id,true,null);
@@ -32,6 +32,7 @@
         if (a[1]==='CompanionInvSearch') return reply(m.id,true,{ok:true,reply:JSON.stringify({complete:true,hits:[{isFolder:false,folder:'fo1',folderName:'Clothes',item:{id:'it3',name:'Blue shirt',kind:'Wearable',asset:'Clothing',worn:'worn',copy:true,mod:true,trans:true}}]})});
         if (a[1]==='CompanionOutfitList') return reply(m.id,true,{ok:true,reply:JSON.stringify({folder:'mo',outfits:[{id:'11111111-0000-0000-0000-000000000001',name:'Beach',count:5,current:true},{id:'11111111-0000-0000-0000-000000000002',name:'Party',count:7,current:false},{id:'11111111-0000-0000-0000-000000000003',name:'Winter',count:9,current:false},{id:'11111111-0000-0000-0000-000000000004',name:'Formal',count:6,current:false},{id:'11111111-0000-0000-0000-000000000005',name:'Explorer',count:8,current:false}]})});
         if (a[1]==='CompanionOutfitSave') { window.__osave=a[2]; return reply(m.id,true,{ok:true,reply:"saved '"+a[2][0]+"': 7 of 7 things"}); }
+        if (a[1]==='CompanionAutoAnim') { window.__aanim=(window.__aanim||[]).concat([a[2][0]]); return reply(m.id,true,{ok:true,reply:a[2][0]==='off'?'off':'on'}); }
         if (a[1]==='CompanionMenusToHud') { window.__mhud=(window.__mhud||[]).concat([a[2][0]]); return reply(m.id,true,{ok:true,reply:a[2][0]==='off'?'off':'on'}); }
         if (a[1]==='CompanionTaskDo') { window.__task=(window.__task||[]).concat([a[2]]); const ac=a[2][0];
           if (ac==='read') return reply(m.id,true,{ok:true,reply:'// opens and closes the lid when touched\ninteger open;\n\ndefault\n{\n    touch_start(integer n)\n    {\n        open = !open;\n        llSetLocalRot(llEuler2Rot(<0, 0, open * PI_BY_TWO>));\n        llSay(0, llList2String(["Closed.", "Open!"], open));\n    }\n}\n'});

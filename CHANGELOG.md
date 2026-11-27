@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.12.4
+- Object menus: buttons whose label holds "|||" (dance machines use them, e.g. "• Dance All • |||120") could not be
+  answered – the command was refused, nothing reached the object and its menu ran out. The app and HUD 1.7.6 now answer
+  with the button's place in the menu; labels sent by older HUDs are matched even when spaces, bullets or "|||" got lost.
+  A wrong answer no longer throws the menu away, and every choice is written to the bot's log.
+
+## 1.12.3
+- HUD 1.7.5: Touch… starts with Key… – paste the key of any object (or of one part of a linked object) the bot can
+  see, also one that is not listed; the list below shows eight things at a time.
+
+## 1.12.2
+- HUD 1.7.4: the menu script of HUD 1.7.3 ran out of memory (Stack-Heap Collision) – the Touch… and Hover menus now
+  live in the camera script, which has room, and the menu script is smaller than in 1.7.2.
+
+## 1.12.1
+- Animation sequences: objects that ask only to animate the bot are allowed at once (dance balls and sequences ask
+  again for every animation, and the bot stopped after the first one); an object you allowed once is not asked again
+  for two hours. "Animations without asking" in Nearby switches it.
+- HUD 1.7.3: Touch… in the main menu – the touchable things near the bot, nine at a time; the bot touches the one you
+  choose and its menu comes to your HUD. Outfit… moved to More ▸.
+- HUD 1.7.3: after you touch the HUD or choose another bot, the menu shows that bot's real Stand / Fly ON / Fly OFF
+  (it came again once the status arrived; before, it showed the last bot's state).
+- Puppeteer: Fly and Run start from the bot's real state (changed from the HUD, say), and the buttons no longer flip
+  back for a moment after a press.
+
 ## 1.12.0
 - README and pictures for everything new since 1.4.3: Nearby, object menus, Inventory, Outfits, the script editor, the
   camera and the HUD's menus (HUD 1.7.2).

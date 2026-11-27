@@ -73,7 +73,7 @@ with sync_playwright() as p:
     pg.evaluate("window.__pushUpdate(Object.assign({}, window.__upd, {available:{version:'1.13.0',page:''}, botsOnline:true}))"); pg.wait_for_timeout(200)
     shot('update')
     # the HUD (an illustration drawn from the HUD's script)
-    hp = b.new_page(viewport={'width': 1280, 'height': 1440})
+    hp = b.new_page(viewport={'width': 1280, 'height': 1480})
     hp.goto(f'http://127.0.0.1:{port}/__hud/hud-illustration.html'); hp.wait_for_timeout(300)
     hp.locator('#main').screenshot(path=os.path.join(out, 'hud-ingame.png'))
     hp.locator('#menus').screenshot(path=os.path.join(out, 'hud-menus.png'))

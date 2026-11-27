@@ -29,6 +29,8 @@ public class PuppetWindow : Window
     readonly ComboBox zoom = new() { FontSize = 11, Width = 64 };
     Button camB = null!, mapB = null!, runB = null!, flyB = null!, standB = null!;
     bool camOn, mapOn, runOn, flyOn;
+    // after Fly / Run is pressed the status still shows the old state for a few seconds: don't flip the button back
+    DateTime ownStateUntil = DateTime.MinValue;
     readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromSeconds(1) };
     DateTime noteUntil = DateTime.MinValue;
     string tileKey = "";
@@ -189,7 +191,12 @@ public class PuppetWindow : Window
         runB = Btn("Run", "Run instead of walk", 22, 11);
         flyB = Btn("Fly", "Fly or land (F)", 22, 11);
         standB = Btn("Stand", "Stand up from a seat", 22, 11);
-        runB.Click += (_, _) => { runOn = !runOn; Lit(runB, runOn); Send(runOn ? "run" : "walk"); };
+        runB.Click += (_, _) =>
+        {
+            // from the bot's real state (the HUD or the app may have changed it), not from this button's last look
+            if (DateTime.Now >= ownStateUntil && bot.Status is JsonNode st) runOn = st["running"]?.GetValue<bool>() == true;
+            runOn = !runOn; Lit(runB, runOn); Send(runOn ? "run" : "walk"); ownStateUntil = DateTime.Now.AddSeconds(5);
+        };
         flyB.Click += (_, _) => ToggleFly();
         standB.Click += (_, _) => Send("stand");
         row.Children.Add(runB); row.Children.Add(flyB); row.Children.Add(standB);
@@ -246,7 +253,11 @@ public class PuppetWindow : Window
 
     void ReleaseAll() { foreach (var a in holds.Keys.ToList()) Release(a); }
 
-    void ToggleFly() { flyOn = !flyOn; Lit(flyB, flyOn); Send(flyOn ? "fly" : "land"); }
+    void ToggleFly()
+    {
+        if (DateTime.Now >= ownStateUntil && bot.Status is JsonNode st) flyOn = st["flying"]?.GetValue<bool>() == true;
+        flyOn = !flyOn; Lit(flyB, flyOn); Send(flyOn ? "fly" : "land"); ownStateUntil = DateTime.Now.AddSeconds(5);
+    }
 
     static string? KeyAction(Key k, bool shift) => k switch
     {
@@ -309,7 +320,7 @@ public class PuppetWindow : Window
         if (online)
         {
             standB.IsEnabled = st!["sitting"]?.GetValue<bool>() == true;
-            if (holds.Count == 0)
+            if (holds.Count == 0 && DateTime.Now >= ownStateUntil)
             {
                 bool f = st["flying"]?.GetValue<bool>() == true; if (f != flyOn) { flyOn = f; Lit(flyB, f); }
                 bool rn = st["running"]?.GetValue<bool>() == true; if (rn != runOn) { runOn = rn; Lit(runB, rn); }

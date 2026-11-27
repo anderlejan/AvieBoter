@@ -1,7 +1,7 @@
 // AvieBoter HUD camera (script name "SL Bot HUD cam") - your camera watches the way the selected bot faces, from
 // behind it at the distance, height and tilt you choose. Handy while you walk the bot with the app's Puppeteer.
 // More ▸ Cam ▸ in the HUD menu; the settings stay in the HUD.
-string  VERSION = "1.7.2";
+string  VERSION = "1.7.6";
 integer chan;
 integer lh;
 key     bot = NULL_KEY;
@@ -26,9 +26,20 @@ float   anchorAsked = -100.0;
 // shown to you as a blue menu; your answer goes back to the bot (AvieBoter 1.10.2+).
 integer omChan;
 integer omL;
+// Touch… (main menu): the touchable things near the bot – lines "local id|metres|name" – nine at a time. It lives
+// here because the menu script has no room left.
+list    touchL;
+integer touchPg;
+integer tChan;
+integer tL;
+string  xMenu;               // which of these menus is open: touch or hover
+// More ▸ Hover ▸ lives here too (same reason)
+float   hoverStep = 0.02;    // metres per Hover press
+string  hoverNow = "";       // the last height the bot reported
 string  omId;
 key     omBot;
 string  omKind;
+list    omBtn;           // the menu's buttons: the answer goes back as "!!b<n>" (labels may hold "|||")
 
 float getNum(string k, float d) { string v = llLinksetDataRead(k); if (v == "") return d; return (float)v; }
 setNum(string k, float v) { llLinksetDataWrite(k, (string)v); }
@@ -62,6 +73,64 @@ anchorCmd(string onOff)        // ("state" is a reserved word in LSL)
         + llSHA1String("CompanionAnchor" + onOff + unix + llList2String(b, i * 3 + 1)) + ";|;" + unix);    // pauses this script 2 s
 }
 
+string botName()
+{
+    string w = llList2String(llParseStringKeepNulls(llLinksetDataRead("bots"), ["\n"], []), (integer)llLinksetDataRead("active") * 3 + 2);
+    if (w == "") w = "the bot";
+    return w;
+}
+
+xListen(string which)
+{
+    xMenu = which;
+    if (tL) llListenRemove(tL);
+    tChan = -1 - (integer)llFrand(900000000.0);
+    tL = llListen(tChan, "", llGetOwner(), "");
+}
+
+hoverMenu()
+{
+    xListen("hover");
+    string cm = (string)llRound(hoverStep * 100.0);
+    string now = hoverNow;
+    if (now == "") now = "not reported yet – press Up or Down";
+    llDialog(llGetOwner(), "\nHover height of " + botName() + " – step " + cm + " cm.\nNow: " + now + "\n\nUp / Down lift or lower the bot, standing or sitting. Reset goes back to the height set in AvieBoter, which is also where the bot starts after logging in again.",
+        ["◀ More", "Reset", "Step " + cm + " cm", "Down ▼", "Up ▲"], tChan);
+}
+
+touchMenu()
+{
+    string who = botName();
+    xListen("touch");
+    integer n = llGetListLength(touchL);
+    if (n == 0 || llSubStringIndex(llList2String(touchL, 0), "|") == -1)
+    {
+        llDialog(llGetOwner(), "\nTouch – " + who + ":\n" + llList2String(touchL, 0) + "\n\nKey…: paste an object's key.", ["◀ Menu", "Again", "Key…"], tChan);
+        return;
+    }
+    integer last = (n - 1) / 8;
+    if (touchPg > last) touchPg = 0;
+    string t = "\nWhat should " + who + " touch? Key…: paste an object's key. Within 20 m of the bot:\n";
+    list o = ["Key…"];
+    integer i;
+    for (i = touchPg * 8; i < n && i < touchPg * 8 + 8; ++i)
+    {
+        list f = llParseStringKeepNulls(llList2String(touchL, i), ["|"], []);
+        string lb = (string)(i + 1) + ". " + llList2String(f, 2);
+        t += "\n" + lb + " – " + llList2String(f, 1) + " m";
+        o += [llGetSubString(lb, 0, 23)];
+    }
+    // a dialog fills its rows from the bottom: the first objects go on top (only the top row may be short)
+    integer m = llGetListLength(o);
+    integer r = m % 3;
+    list b;
+    if (r) b = llList2List(o, 0, r - 1);
+    for (i = r; i < m; i += 3) b = llList2List(o, i, i + 2) + b;
+    string third = "Close";
+    if (last > 0) third = "Next ▶";
+    llDialog(llGetOwner(), llGetSubString(t, 0, 500), ["◀ Menu", "Again", third] + b, tChan);
+}
+
 // shows a menu an object sent the bot; j = {bot, id, k: menu|text|perm|url, o: object, m: message, b: buttons, u: url}
 objMenu(string j)
 {
@@ -82,6 +151,7 @@ objMenu(string j)
     string t = llGetSubString(o + " → " + who + ":\n" + m, 0, 420);
     if (omKind == "text") { llTextBox(llGetOwner(), t, omChan); return; }
     list btn = llJson2List(llJsonGetValue(j, ["b"]));
+    omBtn = btn;
     if (omKind == "perm") { btn = ["Allow", "Refuse"]; t = llGetSubString(o + " asks " + who + " for: " + m, 0, 420); }
     llDialog(llGetOwner(), t, btn, omChan);
 }
@@ -287,6 +357,9 @@ default
     link_message(integer from, integer num, string str, key id)
     {
         if (str == "slbm-objmenu") { objMenu((string)id); return; }
+        if (str == "slbm-hover") { hoverMenu(); return; }
+        if (str == "slbm-ui|hover") { hoverNow = (string)id; if (xMenu == "hover" && tL) hoverMenu(); return; }   // the new height
+        if (str == "slbm-touchlist") { touchL = llParseString2List((string)id, ["\n"], []); touchPg = 0; touchMenu(); return; }
         if (str == "slbm-cam|menu") menu();
         else if (str == "slbm-cam|toggle") { if (camOn) off(); else on(); }
         else if (str == "slbm-cam|on") { if (!camOn) on(); }          // from the app's Puppeteer
@@ -305,6 +378,50 @@ default
 
     listen(integer ch, string name, key id, string m)
     {
+        if (ch == tChan && xMenu == "hover")
+        {
+            llListenRemove(tL); tL = 0;
+            if (m == "◀ More") { llMessageLinked(LINK_THIS, 0, "slbm-ui|more", ""); return; }
+            if (llGetSubString(m, 0, 4) == "Step ")
+            {
+                list steps = [0.01, 0.02, 0.05, 0.10];
+                integer i = llListFindList(steps, [hoverStep]) + 1;
+                if (i >= llGetListLength(steps)) i = 0;
+                hoverStep = llList2Float(steps, i);
+            }
+            else if (m == "Up ▲") llMessageLinked(LINK_THIS, 0, "slbm-do|adjust", "up|" + (string)hoverStep);
+            else if (m == "Down ▼") llMessageLinked(LINK_THIS, 0, "slbm-do|adjust", "down|" + (string)hoverStep);
+            else if (m == "Reset") llMessageLinked(LINK_THIS, 0, "slbm-do|adjust", "reset|" + (string)hoverStep);
+            hoverMenu();
+            return;
+        }
+        if (ch == tChan && xMenu == "key")     // Touch… ▸ Key…: an object's key (UUID)
+        {
+            llListenRemove(tL); tL = 0;
+            m = llStringTrim(m, STRING_TRIM);
+            if ((key)m) llMessageLinked(LINK_THIS, 0, "slbm-do|touch", m);
+            else if (m != "") llOwnerSay("That is not an object's key: " + m);
+            return;
+        }
+        if (ch == tChan)        // the Touch… menu
+        {
+            llListenRemove(tL); tL = 0;
+            if (m == "Key…")
+            {
+                xListen("key");
+                llTextBox(llGetOwner(), "\nTouch which object?\n\nPaste its key (UUID). In your viewer: Edit the object (or one part of it) → General → Copy Keys.", tChan);
+                return;
+            }
+            if (m == "◀ Menu") llMessageLinked(LINK_THIS, 0, "slbm-ui|main", "");
+            else if (m == "Again") llMessageLinked(LINK_THIS, 0, "slbm-do|touchlist", "");
+            else if (m == "Next ▶") { ++touchPg; touchMenu(); }
+            else
+            {
+                integer k = (integer)m - 1;      // "3. Name" -> 2
+                if (k >= 0 && k < llGetListLength(touchL)) llMessageLinked(LINK_THIS, 0, "slbm-do|touch", llList2String(llParseStringKeepNulls(llList2String(touchL, k), ["|"], []), 0));
+            }
+            return;
+        }
         if (ch == rlvChan)      // the viewer has RLV: it follows the bot itself
         {
             llListenRemove(rlvL); rlvL = 0;
@@ -320,6 +437,7 @@ default
         {
             llListenRemove(omL); omL = 0;
             if (omKind == "perm") m = llList2String(["no", "yes"], m == "Allow");
+            else if (omKind == "menu" && llListFindList(omBtn, [m]) != -1) m = "!!b" + (string)llListFindList(omBtn, [m]);
             objAnswer(m);
             return;
         }

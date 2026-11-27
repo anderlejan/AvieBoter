@@ -1622,8 +1622,8 @@
    ],
    [
     "localId",
-    "the object's local id (from CompanionNearby)",
-    "Number"
+    "the object's local id (from CompanionNearby) or its key (UUID)",
+    "Text"
    ],
    [
     "arg",
@@ -1692,6 +1692,39 @@
     ""
    ]
   ]
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionAutoAnim",
+  "type": "Do",
+  "about": "Whether objects may animate the bot without asking (on / off / ask = tell). Objects the user allowed once get the same again for two hours either way.",
+  "params": [
+   "state"
+  ],
+  "argHints": [
+   [
+    "state",
+    "on, off or ask",
+    "Text",
+    "ask"
+   ]
+  ]
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionAnims",
+  "type": "Get",
+  "about": "The animations the bot plays now (names for the built-in ones, else keys) \u2013 to check what objects play on it",
+  "params": [],
+  "argHints": []
+ },
+ {
+  "module": "CompanionWorld",
+  "name": "CompanionTouchList",
+  "type": "Get",
+  "about": "Touchable objects within 20 m of the bot for the HUD's Touch menu: one line each, local id|metres|name, nearest first (at most 18)",
+  "params": [],
+  "argHints": []
  },
  {
   "module": "CompanionWorld",

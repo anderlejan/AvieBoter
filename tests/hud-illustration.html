@@ -29,7 +29,7 @@
   .grid + .ign { margin-top: 8px; text-align: right; } .ign span { padding: 4px 14px; border-radius: 3px; background: #2b4168; border: 1px solid #5f7fb0; font-size: 12px; }
 </style></head><body>
 <div class="scene" id="main"></div>
-<div class="scene" id="menus" style="height:800px"></div>
+<div class="scene" id="menus" style="height:840px"></div>
 <script>
 // llDialog fills its buttons from the bottom row up, three per row – rows are reversed here to show them as Second Life does
 function dlg(x, y, msg, buttons) {
@@ -51,24 +51,24 @@ document.getElementById('main').innerHTML =
   hud(450, 360, 90, '#8c99a6', '', 'No bot paired') +
   hud(320, 120, 110, '#a673ff', 'controls: Passenger', 'Any size') +
   dlg(820, 40, '\nBot: Passenger\nLast status: sitting on Jeep\n\nWhat should the bot do?',
-    ['Bot ▸', 'More ▸', 'Settings ▸', 'Teleport me', 'Fly ON', 'Adjust ▸', 'Sit on…', 'Outfit…', 'Go home', 'Sit with me', 'Come to me', 'Follow ▸']) +
+    ['Bot ▸', 'More ▸', 'Settings ▸', 'Teleport me', 'Fly ON', 'Adjust ▸', 'Sit on…', 'Touch…', 'Go home', 'Sit with me', 'Come to me', 'Follow ▸']) +
   '<div class="cap">Illustration of the HUD you wear in Second Life and its main menu. Touch the HUD to open the menu. Fly ON / Fly OFF follows the bot (Stand while it sits); Teleport me brings a teleport offer from the bot.</div>';
 document.getElementById('menus').innerHTML =
   dlg(20, 30, '\nFollow – Passenger is following you.\nPlace: 2.0 m behind you (remembered).\n\nIt walks after you, runs when you run, flies when you fly, and teleports when you get far away or change region.',
     ['◀ Menu', 'Stop', 'Follow me', 'Left side', 'Behind', 'Right side', 'Closer', 'In front', 'Farther']) +
   dlg(335, 30, '\nAdjust Passenger on its seat – step 5 cm.\n\nUp / Down always work. Forward, Backward, Left and Right make the bot sit down again a bit moved.',
     ['◀ Menu', 'Reset', 'Step 5 cm', 'Left', 'Backward', 'Right', 'Up ▲', 'Forward', 'Down ▼']) +
-  dlg(650, 30, '\nMore for Passenger:\n\nHover ▸: lift or lower the bot.   Cam ▸: your camera watches the way the bot faces.   Status: what the bot is doing and where.',
-    ['◀ Menu', 'Set home…', 'Log off…', 'Hover ▸', 'Status', 'Cam ▸']) +
-  dlg(965, 30, '\nHUD settings\n\nThis HUD: version 1.7.2 – the newest.\n\nSmaller / Bigger: size. Colour: the ring when ready. Text: the floating text.\nSave look keeps size, colour and shape; Reset look goes back to the saved or the original look.\nUpdate HUD: a bot in this region brings the newest HUD.',
+  dlg(650, 30, '\nMore for Passenger:\n\nHover ▸: lift or lower the bot.   Cam ▸: your camera watches the way the bot faces.   Status: what the bot is doing and where.   Outfit…: a folder to wear.',
+    ['◀ Menu', 'Set home…', 'Log off…', 'Hover ▸', 'Status', 'Cam ▸', 'Outfit…']) +
+  dlg(965, 30, '\nHUD settings\n\nThis HUD: version 1.7.6 – the newest.\n\nSmaller / Bigger: size. Colour: the ring when ready. Text: the floating text.\nSave look keeps size, colour and shape; Reset look goes back to the saved or the original look.\nUpdate HUD: a bot in this region brings the newest HUD.',
     ['◀ Menu', 'Help', 'Unpair…', 'Reset look', 'Colour ▸', 'Hide text', 'Smaller', 'Bigger', 'Update HUD', 'Save look']) +
   dlg(20, 440, '\nCam – your camera watches the way the bot faces.\n\nNow: on\nDistance 4.0 m, height 1.5 m, tilt 0.5 m, turned 0°',
     ['Turn ◀', 'Reset', 'Turn ▶', 'Tilt down', 'Tilt up', '◀ More', 'Closer', 'Farther', 'Cam OFF', 'Lower', 'Higher']) +
-  dlg(335, 440, '\nHover height of Passenger – step 2 cm.\nNow: 0.12 m\n\nUp / Down lift or lower the bot, standing or sitting. Reset goes back to the height set in AvieBoter.',
-    ['◀ More', 'Reset', 'Step 2 cm', 'Down ▼', 'Up ▲']) +
+  dlg(335, 440, '\nWhat should Passenger touch? Key…: paste an object\'s key. Within 20 m of the bot:\n\n1. Paint Vendor – 3 m\n2. Dance Ball – 6 m\n3. Door – 8 m\n4. Welcome sign – 12 m\n5. Radio – 15 m',
+    ['◀ Menu', 'Again', 'Close', '3. Door', '4. Welcome sign', '5. Radio', 'Key…', '1. Paint Vendor', '2. Dance Ball']) +
   dlg(650, 440, 'Paint Vendor → Passenger:\nChoose a colour',
     ['Red', 'Green', 'Blue', '◀ Back', 'Next ▶']) +
   dlg(965, 440, 'Dance Ball asks Passenger for: TriggerAnimation',
     ['Allow', 'Refuse']) +
-  '<div class="cap">Illustration of the Follow, Adjust (when seated), More, HUD settings, Cam (More ▸ Cam) and Hover (More ▸ Hover) menus – and, bottom right, a menu and a permission question that objects sent the bot, shown on your HUD: your answer goes back to the bot.</div>';
+  '<div class="cap">Illustration of the Follow, Adjust (when seated), More, HUD settings, Cam (More ▸ Cam) and Touch… menus – and, bottom right, a menu and a permission question that objects sent the bot, shown on your HUD: your answer goes back to the bot.</div>';
 </script></body></html>
